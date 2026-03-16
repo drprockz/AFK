@@ -1,0 +1,1 @@
+Continue building the AFK plugin. Read CLAUDE.md for the full spec, and docs/superpowers/specs/2026-03-16-afk-core-design.md for design corrections. Phase 1+2 is done (see docs/superpowers/plans/). Start Phase 3: AFK + safety — snapshot, deferral queue, idle detector, digest, and /afk slash command.
