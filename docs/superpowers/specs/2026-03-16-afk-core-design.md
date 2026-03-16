@@ -140,15 +140,16 @@ decisions_id INTEGER NOT NULL  -- FK to decisions.id of the originating defer ro
 
 ### Decision: Extended `source` enum
 
-The `decisions.source` column (CLAUDE.md: `-- user | rule | prediction | auto_afk`) is extended. The corrected DDL comment is `-- user | rule | prediction | auto_afk | auto_defer`.
+The `decisions.source` column (CLAUDE.md: `-- user | rule | prediction | auto_afk`) is extended. The corrected DDL comment is `-- user | rule | prediction | auto_afk | auto_defer | chain`.
 
 | Value | Meaning |
 |---|---|
 | `user` | User approved/denied manually (including post-deferral review) |
 | `rule` | Matched a static rule |
-| `prediction` | Auto-decided by behavior predictor |
+| `prediction` | Auto-decided by behavior predictor (including uncertain escalation logged as `ask`) |
 | `auto_afk` | Auto-approved by AFK fallback |
-| `auto_defer` | Deferred by classifier or anomaly detector |
+| `auto_defer` | Deferred by classifier or anomaly detector (AFK-ON path only; `decision='defer'`) |
+| `chain` | Hard safety gate decision: sensitive path guard, prompt injection, or destructive (AFK-OFF path). These are `ask` or `deny` decisions made by chain safety checks before any user/rule/prediction logic fires. |
 
 ### Anomaly scoring: gap in 3–9 occurrence range
 
@@ -240,7 +241,7 @@ Steps 1, 3, and 5 send notifications as **fire-and-forget** in AFK mode — they
 | `deferred` → `decisions` link | Not specified | `deferred.decisions_id` FK; reviews log new `decisions` row with `source='user'` |
 | Stats double-counting | Not addressed | Deferral counts use `decision='defer'`; outcome counts exclude it |
 | Project index | Missing | `idx_decisions_project ON decisions(project_cwd, tool)` |
-| `source` enum | 4 values, comment outdated | 5 values: adds `auto_defer`; DDL comment updated |
+| `source` enum | 4 values, comment outdated | 6 values: adds `auto_defer` (deferrals) and `chain` (hard safety gate denials/asks); DDL comment updated |
 | Anomaly score 3–9 range | Undefined | Linear decay: `max(0, 0.7 - (count-2) * 0.1)` |
 | Chain step 4 | Anomaly | Static rules |
 | Chain step 5 | Static rules | Anomaly (with explicit `continue` on non-anomalous path) |

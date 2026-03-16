@@ -2010,11 +2010,14 @@ export async function chain(request, deadline) {
     : input
   const destructive = classify(tool, inputWithExistence)
   if (destructive.destructive) {
-    // AFK-ON: Phase 3 will add snapshot() + deferred queue insert here.
-    // AFK-ON logged decision should be 'defer' (not 'ask') once Phase 3 is wired.
-    // For now both AFK states return ask — the distinction is not yet observable externally.
-    const decision = afkOn ? 'defer' : 'ask'
-    log(decision, 'chain', { reason: `Destructive: ${destructive.reason} (${destructive.severity})` })
+    if (afkOn) {
+      // AFK-ON: log as defer + auto_defer source per spec.
+      // Phase 3 will also add snapshot() call and deferred queue row insert here.
+      log('defer', 'auto_defer', { reason: `Destructive: ${destructive.reason} (${destructive.severity})` })
+    } else {
+      // AFK-OFF: log as ask + chain source (hard safety gate, not a user/rule/prediction decision)
+      log('ask', 'chain', { reason: `Destructive: ${destructive.reason} (${destructive.severity})` })
+    }
     return { behavior: 'ask', reason: `Destructive action detected: ${destructive.reason}` }
   }
 
