@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/darshanparmar/Projects/AFK/src/hook.js"
+          }
+        ]
+      }
+    ]
+  }
+}
