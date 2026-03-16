@@ -9,8 +9,7 @@
     "setup": "node scripts/setup.js"
   },
   "dependencies": {
-    "better-sqlite3": "latest",
-    "express": "latest"
+    "better-sqlite3": "latest"
   },
   "devDependencies": {},
   "engines": {
