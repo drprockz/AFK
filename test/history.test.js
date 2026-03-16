@@ -5,7 +5,8 @@ import { join } from 'node:path'
 
 process.env.AFK_DB_DIR = join(tmpdir(), 'afk-history-test-' + Date.now())
 
-const { logDecision, queryByPattern } = await import('../src/store/history.js')
+const { logDecision, queryByPattern, updateBaseline } = await import('../src/store/history.js')
+const { getDb } = await import('../src/store/db.js')
 
 const baseDecision = {
   session_id: 'test-session',
@@ -55,7 +56,6 @@ test('queryByPattern returns matching decisions sorted by recency', () => {
 })
 
 test('queryByPattern ignores decisions older than 90 days', async () => {
-  const { getDb } = await import('../src/store/db.js')
   const oldTs = Date.now() - (91 * 24 * 60 * 60 * 1000)
   getDb().prepare(`
     INSERT INTO decisions (ts, session_id, tool, input, command, decision, source, project_cwd)
@@ -64,4 +64,33 @@ test('queryByPattern ignores decisions older than 90 days', async () => {
   const rows = queryByPattern({ tool: 'Bash', pattern: 'npm run test', project_cwd: '/projects/myapp' })
   const tooOld = rows.find(r => r.ts === oldTs)
   assert.strictEqual(tooOld, undefined, 'old decision should be excluded')
+})
+
+test('updateBaseline creates a new baseline row with count=1 for unseen pattern', () => {
+  const request = {
+    tool: 'Bash',
+    input: { command: 'npm run lint' },
+    cwd: '/projects/testapp'
+  }
+  updateBaseline(request)
+  const row = getDb().prepare(`
+    SELECT count FROM baselines
+    WHERE project_cwd = ? AND tool = ? AND pattern = ?
+  `).get('/projects/testapp', 'Bash', 'npm run')
+  assert.strictEqual(row.count, 1, 'count should be 1 for first insert')
+})
+
+test('updateBaseline increments count on second call for same key', () => {
+  const request = {
+    tool: 'Bash',
+    input: { command: 'npm run lint' },
+    cwd: '/projects/testapp2'
+  }
+  updateBaseline(request)
+  updateBaseline(request)
+  const row = getDb().prepare(`
+    SELECT count FROM baselines
+    WHERE project_cwd = ? AND tool = ? AND pattern = ?
+  `).get('/projects/testapp2', 'Bash', 'npm run')
+  assert.strictEqual(row.count, 2, 'count should increment to 2, not create duplicate row')
 })

@@ -49,7 +49,7 @@ function migrate(db) {
       input        TEXT NOT NULL,
       command      TEXT,
       path         TEXT,
-      decisions_id INTEGER NOT NULL,
+      decisions_id INTEGER NOT NULL,      -- FK to decisions.id of originating defer row (per design spec §2)
       reviewed     INTEGER DEFAULT 0,
       final        TEXT,
       review_ts    INTEGER
