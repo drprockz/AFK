@@ -1,0 +1,6 @@
+{
+  "tool": "Bash",
+  "input": { "command": "rm -rf dist/" },
+  "session_id": "test-session-001",
+  "cwd": "/projects/myapp"
+}

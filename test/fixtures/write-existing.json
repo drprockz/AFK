@@ -1,0 +1,6 @@
+{
+  "tool": "Write",
+  "input": { "file_path": "/projects/myapp/package.json", "content": "{}" },
+  "session_id": "test-session-001",
+  "cwd": "/projects/myapp"
+}
