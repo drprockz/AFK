@@ -123,7 +123,7 @@ The spec has both tables but doesn't clarify the relationship. Naive implementat
 
 ### Decision: Deferred = queue view, decisions = permanent log, reviews logged as new rows
 
-A deferred action is logged **once** in `decisions` with `decision='defer'` and `source='auto_defer'`. It is also inserted into `deferred` as the review queue entry, with a `decisions_id` column referencing the originating `decisions.id`.
+A deferred action is logged **once** in `decisions` with `decision='defer'` and `source='auto_defer'`. The `decisions` insert must execute first; its returned row ID is then used to populate `deferred.decisions_id` in the subsequent `deferred` insert.
 
 When a user reviews a deferred item (via dashboard `POST /api/queue/:id` or notification response), two writes occur:
 1. `deferred` row is updated: `reviewed=1`, `final='allow'|'deny'`, `review_ts=now`
