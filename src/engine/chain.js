@@ -1,0 +1,132 @@
+// src/engine/chain.js
+import { isSensitive } from './sensitive.js'
+import { hasInjection } from './injection.js'
+import { classify } from './classifier.js'
+import { matchRule } from './rules.js'
+import { predict } from './predictor.js'
+import { isAfk, getSessionId, appendDigest } from '../afk/state.js'
+import { logDecision } from '../store/history.js'
+import { existsSync } from 'node:fs'
+
+/**
+ * Extracts command and path from a PermissionRequest input.
+ * @param {string} tool
+ * @param {object} input
+ * @returns {{ command: string|null, path: string|null }}
+ */
+function extractFields(tool, input) {
+  return {
+    command: tool === 'Bash' ? (input.command ?? null) : null,
+    path: input.file_path ?? input.path ?? null
+  }
+}
+
+/**
+ * Full 7-step decision chain. Must complete before deadline.
+ * Step 7 is simplified in Phase 1+2: notifications/dashboard are Phase 5/6.
+ * @param {object} request  — { tool, input, session_id, cwd }
+ * @param {number} deadline — Unix ms timestamp after which chain must return
+ * @returns {Promise<{ behavior: 'allow'|'deny'|'ask', reason: string }>}
+ */
+export async function chain(request, deadline) {
+  // Deadline guard — if already expired, fail closed immediately
+  if (Date.now() >= deadline) {
+    return { behavior: 'ask', reason: 'deadline expired before chain start' }
+  }
+
+  const { tool, input, session_id, cwd } = request
+  const { command, path } = extractFields(tool, input)
+  const afkOn = isAfk()
+
+  function log(decision, source, opts = {}) {
+    try {
+      logDecision({ session_id, tool, input, command, path, decision, source, project_cwd: cwd, ...opts })
+    } catch { /* non-fatal — never block on logging */ }
+  }
+
+  // ── Step 1: Sensitive path guard ─────────────────────────────────────────
+  // source='chain': hard safety gate, not a user/rule/prediction decision.
+  // Sensitive requests always interrupt — even in AFK mode.
+  const sensitive = isSensitive(tool, input)
+  if (sensitive.sensitive) {
+    log('ask', 'chain', { reason: `Sensitive path: ${sensitive.matched}` })
+    // Phase 3: in AFK mode, also fire-and-forget an urgent notification here
+    return { behavior: 'ask', reason: `Sensitive path detected: ${sensitive.matched}` }
+  }
+
+  // ── Step 2: Prompt injection ──────────────────────────────────────────────
+  // source='chain': hard safety gate, immediate deny.
+  const injection = hasInjection(input)
+  if (injection.injected) {
+    log('deny', 'chain', { reason: injection.reason })
+    return { behavior: 'deny', reason: injection.reason }
+  }
+
+  // ── Step 3: Destructive classifier ───────────────────────────────────────
+  // For Write/Edit, check if file exists to flag overwrite as destructive
+  const inputWithExistence = (tool === 'Write' || tool === 'Edit' || tool === 'MultiEdit') && path
+    ? { ...input, _existsOnDisk: existsSync(path) }
+    : input
+  const destructive = classify(tool, inputWithExistence)
+  if (destructive.destructive) {
+    // Before deferring/interrupting: check if a static deny rule applies.
+    // A deny rule is more specific/intentional than the generic "ask" that the
+    // destructive classifier would produce — honour it for a cleaner signal.
+    const denyRule = matchRule({ tool, input, cwd })
+    if (denyRule && denyRule.action === 'deny') {
+      log('deny', 'rule', { rule_id: denyRule.id, reason: `Rule (destructive override): ${denyRule.label ?? denyRule.pattern}` })
+      return { behavior: 'deny', reason: `Matched deny rule: ${denyRule.label ?? denyRule.pattern}` }
+    }
+
+    if (afkOn) {
+      // AFK-ON: log as defer + auto_defer source per spec.
+      // Phase 3 will also add snapshot() call and deferred queue row insert here.
+      log('defer', 'auto_defer', { reason: `Destructive: ${destructive.reason} (${destructive.severity})` })
+    } else {
+      // AFK-OFF: log as ask + chain source (hard safety gate, not a user/rule/prediction decision)
+      log('ask', 'chain', { reason: `Destructive: ${destructive.reason} (${destructive.severity})` })
+    }
+    return { behavior: 'ask', reason: `Destructive action detected: ${destructive.reason}` }
+  }
+
+  // ── Step 4: Static rules ──────────────────────────────────────────────────
+  const rule = matchRule({ tool, input, cwd })
+  if (rule) {
+    const behavior = rule.action === 'allow' ? 'allow' : 'deny'
+    log(behavior, 'rule', { rule_id: rule.id, reason: `Rule: ${rule.label ?? rule.pattern}` })
+    return { behavior, reason: `Matched rule: ${rule.label ?? rule.pattern}` }
+  }
+
+  // ── Step 5: Anomaly detector ──────────────────────────────────────────────
+  // Phase 4 — placeholder, always passes through
+  // anomaly detection wired in Phase 4 plan
+
+  // ── Step 6: Behavior predictor ────────────────────────────────────────────
+  const prediction = predict({ tool, input, cwd })
+  if (prediction.confidence > 0.85) {
+    const behavior = prediction.predicted
+    log(behavior, 'prediction', { confidence: prediction.confidence, reason: prediction.explanation })
+    return { behavior, reason: prediction.explanation }
+  }
+  if (prediction.confidence < 0.15) {
+    log('deny', 'prediction', { confidence: prediction.confidence, reason: prediction.explanation })
+    return { behavior: 'deny', reason: prediction.explanation }
+  }
+
+  // ── Step 7: Smart AFK fallback ────────────────────────────────────────────
+  // Phase 1+2 scope: AFK ON → auto-approve; else → ask.
+  // Phase 5/6 will add notification and dashboard queue branches here.
+  // IMPORTANT for Phase 5 wiring: before any await of a notification response,
+  // compute: const remaining = deadline - Date.now()
+  // if (remaining <= 2000) return { behavior: 'ask', reason: 'deadline' }
+  // const waitMs = Math.min(config.notifications.timeout * 1000, remaining - 2000)
+  if (afkOn) {
+    log('allow', 'auto_afk', { reason: 'AFK mode: auto-approved' })
+    appendDigest({ tool, command, path, decision: 'allow', ts: Date.now() })
+    return { behavior: 'allow', reason: 'AFK mode: auto-approved' }
+  }
+
+  // source='prediction': this decision came from the predictor's uncertainty band (0.15–0.85)
+  log('ask', 'prediction', { confidence: prediction.confidence, reason: 'Low confidence, user prompt required' })
+  return { behavior: 'ask', reason: 'Insufficient confidence — user input required' }
+}
