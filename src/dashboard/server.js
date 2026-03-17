@@ -25,12 +25,8 @@ export function startServer(port = 6789) {
     // server running
   })
   _server.on('error', err => {
-    if (err.code === 'EADDRINUSE') {
-      process.stderr.write(`afk dashboard: port ${port} already in use\n`)
-      _server = null
-    } else {
-      process.stderr.write(`afk dashboard error: ${err.message}\n`)
-    }
+    process.stderr.write(`afk dashboard error: ${err.message}\n`)
+    _server = null
   })
 }
 
@@ -41,6 +37,7 @@ export function startServer(port = 6789) {
 export function stopServer() {
   return new Promise(resolve => {
     if (!_server) return resolve()
+    _server.closeAllConnections()
     _server.close(() => { _server = null; resolve() })
   })
 }
