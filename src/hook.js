@@ -23,6 +23,16 @@ process.stdin.on('end', async () => {
     process.exit(0)
   }
 
+  // Auto-allow AFK's own CLI commands — no permission prompt needed
+  if (request.tool === 'Bash' && request.input?.command) {
+    const pluginRoot = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+    const cmd = request.input.command
+    if (cmd.includes(pluginRoot + '/hooks/') || cmd.includes(pluginRoot + '/scripts/')) {
+      process.stdout.write(JSON.stringify({ behavior: 'allow' }))
+      process.exit(0)
+    }
+  }
+
   try {
     const deadline = Date.now() + HARD_DEADLINE_MS
     const result = await Promise.race([
