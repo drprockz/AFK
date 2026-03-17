@@ -1,0 +1,13 @@
+{
+  "name": "drprockz/afk-marketplace",
+  "description": "drprockz plugin marketplace — AFK and future tools",
+  "plugins": [
+    {
+      "name": "afk",
+      "description": "Intelligent permission layer for Claude Code. AFK mode, behavior prediction, destructive action deferral.",
+      "version": "0.1.0",
+      "source": "https://github.com/drprockz/afk",
+      "categories": ["safety", "productivity", "automation"]
+    }
+  ]
+}
