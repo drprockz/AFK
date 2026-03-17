@@ -5,8 +5,6 @@ import { getPendingItems, getPendingCount, resolveItem, getItemById } from '../s
 import { addRule, removeRule, listRules, getRule } from '../engine/rules.js'
 import { getState, setAfk } from '../afk/state.js'
 import { buildDigest } from '../afk/digest.js'
-import { loadConfig } from '../notify/config.js'
-import { notify } from '../notify/notify.js'
 
 const router = express.Router()
 
@@ -16,7 +14,7 @@ router.get('/status', (_req, res) => {
   const today = getTodayStats()
   const queue_count = getPendingCount()
   const auto_rate = today.total > 0
-    ? Math.round(today.auto_approved / today.total * 100)
+    ? Math.round((today.auto_approved + today.auto_denied) / today.total * 100)
     : 0
   res.json({
     ok:          true,
@@ -33,15 +31,19 @@ router.get('/status', (_req, res) => {
 // ── GET /api/decisions ────────────────────────────────────────────────────────
 router.get('/decisions', (req, res) => {
   const { page, limit, tool, source, decision, date } = req.query
-  const result = listDecisions({
-    page:     page     ? Number(page)  : 1,
-    limit:    limit    ? Number(limit) : 50,
-    tool:     tool     || undefined,
-    source:   source   || undefined,
-    decision: decision || undefined,
-    date:     date     || undefined
-  })
-  res.json(result)
+  try {
+    const result = listDecisions({
+      page:     page     ? Number(page)  : 1,
+      limit:    limit    ? Number(limit) : 50,
+      tool:     tool     || undefined,
+      source:   source   || undefined,
+      decision: decision || undefined,
+      date:     date     || undefined
+    })
+    res.json(result)
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
 })
 
 // ── GET /api/queue ────────────────────────────────────────────────────────────
@@ -60,19 +62,6 @@ router.post('/queue/:id', async (req, res) => {
   if (!row) return res.status(404).json({ error: 'queue item not found' })
   if (row.reviewed) return res.status(409).json({ error: 'item already reviewed', final: row.final })
   resolveItem(id, action)
-  // fire-and-forget notification
-  try {
-    const config = loadConfig()
-    if (config?.notifications?.provider) {
-      const deadline = Date.now() + (config.notifications?.timeout ?? 5) * 1000
-      notify(config, {
-        tool:      row?.tool      ?? 'unknown',
-        command:   row?.command   ?? null,
-        path:      row?.path      ?? null,
-        requestId: String(id)
-      }, deadline).catch(err => process.stderr.write(`afk notify: ${err.message}\n`))
-    }
-  } catch { /* ignore notify errors */ }
   res.json({ id, final: action, review_ts: Date.now() })
 })
 
@@ -93,7 +82,7 @@ router.post('/rules', (req, res) => {
     return res.status(400).json({ error: 'action must be allow or deny' })
   }
   const id = addRule({ tool, pattern, action, label, project, priority })
-  res.json(getRule(id))
+  res.status(201).json(getRule(id))
 })
 
 // ── DELETE /api/rules/:id ─────────────────────────────────────────────────────
@@ -130,9 +119,10 @@ router.get('/export', (req, res) => {
   if (format === 'csv') {
     res.setHeader('Content-Disposition', 'attachment; filename="afk-decisions.csv"')
     res.setHeader('Content-Type', 'text/csv')
-    const header = 'id,ts,tool,command,path,decision,source,confidence'
+    const header = 'id,ts,tool,command,path,decision,source,confidence,reason'
     const rows = items.map(i =>
-      [i.id, i.ts, i.tool, i.command ?? '', i.path ?? '', i.decision, i.source, i.confidence ?? ''].join(',')
+      [i.id, i.ts, i.tool, i.command ?? '', i.path ?? '', i.decision, i.source, i.confidence ?? '',
+       (i.reason ?? '').replace(/,/g, ';')].join(',')
     )
     res.send([header, ...rows].join('\n'))
   } else {

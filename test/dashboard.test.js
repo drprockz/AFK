@@ -135,6 +135,30 @@ test('POST /api/queue/:id with invalid action returns 400', async () => {
   assert.ok(body.error.includes('invalid action'))
 })
 
+test('POST /api/queue/:id with nonexistent id returns 404', async () => {
+  const { status, body } = await post('/api/queue/999999', { action: 'allow' })
+  assert.strictEqual(status, 404)
+  assert.ok(body.error.includes('not found'))
+})
+
+test('POST /api/queue/:id on already-reviewed item returns 409', async () => {
+  // add a fresh item, resolve it, then try to resolve again
+  const decidId = logDecision({
+    session_id: 'sess-409', tool: 'Write',
+    input: { file_path: '/tmp/x' }, command: null, path: '/tmp/x',
+    decision: 'defer', source: 'auto_defer', confidence: null,
+    rule_id: null, reason: 'test', project_cwd: '/projects/app'
+  })
+  const id = enqueueDeferred({
+    decisionsId: decidId, sessionId: 'sess-409', tool: 'Write',
+    input: { file_path: '/tmp/x' }, command: null, path: '/tmp/x'
+  })
+  await post(`/api/queue/${id}`, { action: 'allow' })
+  const { status, body } = await post(`/api/queue/${id}`, { action: 'deny' })
+  assert.strictEqual(status, 409)
+  assert.ok(body.error.includes('already reviewed'))
+})
+
 // ── GET /api/rules ────────────────────────────────────────────────────────────
 test('GET /api/rules returns array of rules', async () => {
   const { status, body } = await get('/api/rules')
@@ -149,7 +173,7 @@ test('POST /api/rules creates a rule and returns full object', async () => {
   const { status, body } = await post('/api/rules', {
     tool: 'Read', pattern: 'src/*', action: 'allow', label: 'src reads'
   })
-  assert.strictEqual(status, 200)
+  assert.strictEqual(status, 201)
   assert.ok('id' in body, 'has id')
   assert.ok('created_ts' in body, 'has created_ts')
   assert.strictEqual(body.tool, 'Read')

@@ -2,6 +2,7 @@
 
 let _refreshInterval = null
 let _projectCwd = null   // populated from /api/status for project-scoped rule creation
+let _rulesListenerAttached = false
 
 // ── Router ────────────────────────────────────────────────────────────────────
 const routes = {
@@ -426,10 +427,13 @@ async function renderRules() {
     </div>
   `
 
-  document.getElementById('content').addEventListener('click', e => {
-    const btn = e.target.closest('.btn-delete-rule')
-    if (btn) deleteRule(btn.dataset.id)
-  })
+  if (!_rulesListenerAttached) {
+    _rulesListenerAttached = true
+    document.getElementById('content').addEventListener('click', e => {
+      const btn = e.target.closest('.btn-delete-rule')
+      if (btn) deleteRule(btn.dataset.id)
+    })
+  }
 }
 
 function toggleAddForm() {
