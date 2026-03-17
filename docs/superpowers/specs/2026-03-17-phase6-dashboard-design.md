@@ -78,7 +78,7 @@ test/
 
 ## Store Layer Additions
 
-Phase 6 requires three new exported functions added to `src/store/history.js`. No other existing files are modified.
+Phase 6 adds three new exported functions to `src/store/history.js` and one new export to `src/engine/rules.js`. The only existing script file modified is `scripts/afk-review-cli.js` (new file, not existing). `scripts/afk-cli.js` is NOT modified.
 
 ### `listDecisions({ page, limit, tool, source, decision, date })`
 Paginated query of the decisions table.
@@ -98,6 +98,14 @@ Aggregated stats over the last 90 days.
 - `top_patterns`: `SELECT tool, COALESCE(command, path, tool) as pattern, COUNT(*) as total, ROUND(AVG(decision='allow'), 2) as allow_rate FROM decisions WHERE ts >= ? GROUP BY tool, pattern ORDER BY total DESC LIMIT 20`
 - `by_source`: `SELECT source, COUNT(*) as count FROM decisions WHERE ts >= ? GROUP BY source` — pivot the result rows into a flat object: `Object.fromEntries(rows.map(r => [r.source, r.count]))`, e.g. `{ user: N, rule: N, prediction: N, auto_afk: N }`
 - Uses raw SQL via `getDb()` directly within `history.js`
+
+### `getRule(id)` — added to `src/engine/rules.js`
+Reads a single rule by id.
+- `id`: string (uuid)
+- Returns the full rule row object `{ id, created_ts, tool, pattern, action, label, project, priority }` or `null` if not found
+- Used by `POST /api/rules` after `addRule` to return the full created object
+
+---
 
 ### `getTodayStats()`
 Decision counts for the current calendar day (UTC).
@@ -136,7 +144,14 @@ if (!alreadyRunning) {
 }
 ```
 
-`server.js` in standalone mode (run directly, not imported) calls `startServer()` on load.
+`server.js` in standalone mode (run directly, not imported) calls `startServer()` on load using the ESM main-module check:
+```js
+import { fileURLToPath } from 'node:url'
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  startServer()
+}
+```
+This ensures `startServer()` is only auto-invoked when the file is run directly (`node src/dashboard/server.js`), not when it is imported by tests or `api.js`.
 
 - `afk-cli.js` (existing file) does NOT need modification for server startup — the server is only started by `afk-review-cli.js`. Remove the "server starts on /afk on" requirement — it was architecturally unsound (CLI process exits immediately, killing the server).
 - The only existing file modified is `src/store/history.js` (new query functions).
@@ -203,7 +218,7 @@ All rules sorted by priority descending. Calls `listRules(null)` (global + all p
 ### `POST /api/rules`
 Create a rule. Body: `{ "tool", "pattern", "action", "label"?, "project"?, "priority"? }`.
 Required fields: `tool`, `pattern`, `action`. Missing required fields return 400 `{ "error": "missing field: <name>" }`.
-Calls `addRule(...)` from `engine/rules.js` — which returns only the new rule's `id` string. After calling `addRule`, re-read the row from DB via `db.prepare('SELECT * FROM rules WHERE id = ?').get(id)` to return the full rule object (with `created_ts`, all fields).
+Calls `addRule(...)` from `engine/rules.js` — which returns only the new rule's `id` string. After calling `addRule`, re-read the row via `getRule(id)` (new export added to `engine/rules.js` — see Store Layer Additions) to return the full rule object (with `created_ts`, all fields).
 
 ### `DELETE /api/rules/:id`
 Delete a rule by id. Calls `removeRule(id)`. Always returns 200 `{ "deleted": true }` — idempotent (deleting a non-existent id is a no-op, not an error). `removeRule` does not return a value, so 404 is not detectable and not needed here.
@@ -302,7 +317,8 @@ Top auto-approved patterns:
   2. Read: src/*
   3. Bash: git status
 ```
-Top patterns: calls `getDecisionStats().top_patterns` and takes the first 3 items.
+- `User-reviewed` is derived as `total - auto_approved - auto_denied - deferred`. These four categories cover all `decision` values (`allow`, `deny`, `defer`) split by `source`, so they are mutually exclusive and the difference is never negative.
+- Top patterns: calls `getDecisionStats().top_patterns` and takes the first 3 items.
 
 ### `commands/afk-rules.md` → `scripts/afk-rules-cli.js`
 Imports `listRules`, `addRule`, `removeRule` from `../src/engine/rules.js`. Handles subcommands via `process.argv`:
