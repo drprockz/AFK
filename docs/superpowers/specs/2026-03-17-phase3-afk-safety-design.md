@@ -152,6 +152,9 @@ AFK ON + destructive:
        reason: `Destructive: ${destructive.reason} (${destructive.severity}). ${snapshotNote}`
      })
   5. enqueueDeferred({ decisionsId, sessionId: session_id, tool, input, command, path })
+     // Pass original `input` (from `request.input`), NOT `inputWithExistence`.
+     // chain.js adds `_existsOnDisk` to an internal copy for classification only — that
+     // annotation must not leak into the user-facing deferred queue.
   6. appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() })
   7. return { behavior: 'ask', reason: `Destructive action deferred: ${destructive.reason}` }
 ```
@@ -353,10 +356,10 @@ Examples: `30m` → 30, `2h` → 120, `1h30m` → 90, `abc` → null (treated as
 
 1. If AFK is currently OFF → print `"AFK mode is already off."` then continue to show digest and queue (useful for reviewing the queue even when not in AFK mode).
 2. Call `setAfk(false)`.
-3. Call `getAndClearDigest()` from `state.js`.
-4. Call `getPendingItems()` from `queue.js`.
+3. `const entries = getAndClearDigest()` from `state.js`.
+4. `const pendingItems = getPendingItems()` from `queue.js`. Derive `const pendingCount = pendingItems.length`.
 5. Print `buildDigest(entries, pendingCount)`.
-6. If pending items exist, print each one with its queue id.
+6. If `pendingItems.length > 0`, print each one with its queue id.
 
 ### `off` subcommand output
 
