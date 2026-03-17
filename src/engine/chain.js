@@ -169,12 +169,9 @@ export async function chain(request, deadline) {
   }
 
   // ── Step 7: Smart AFK fallback ────────────────────────────────────────────
-  // Phase 1+2 scope: AFK ON → auto-approve; else → ask.
-  // Phase 5/6 will add notification and dashboard queue branches here.
-  // IMPORTANT for Phase 5 wiring: before any await of a notification response,
-  // compute: const remaining = deadline - Date.now()
-  // if (remaining <= 2000) return { behavior: 'ask', reason: 'deadline' }
-  // const waitMs = Math.min(config.notifications.timeout * 1000, remaining - 2000)
+  // AFK-ON: send notification, wait for user response.
+  // "allow", "skip", or "timeout" all auto-approve (notifications are additive, never blocking).
+  // Only a "deny" response interrupts. AFK-OFF falls through to ask.
   if (afkOn) {
     const requestId = randomUUID()
     const notifyResult = await notify(loadConfig(), { tool, command, path, requestId }, deadline)
