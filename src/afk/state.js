@@ -43,6 +43,7 @@ function defaultState() {
     afk_until: null,
     session_id: randomUUID(),
     auto_afk_minutes: 15,
+    last_request_ts: null,
     digest: []
   }
 }
@@ -105,4 +106,23 @@ export function getAndClearDigest() {
   const digest = state.digest ?? []
   writeState({ ...state, digest: [] })
   return digest
+}
+
+/**
+ * Returns the full current state object. Read-only snapshot.
+ * @returns {object}
+ */
+export function getState() {
+  return readState()
+}
+
+/**
+ * Updates last_request_ts to the current time.
+ * MUST be read-modify-write — spreads current state, not defaultState.
+ * Called by detector.js on every hook invocation.
+ * @returns {void}
+ */
+export function touchLastRequestTs() {
+  const state = readState()
+  writeState({ ...state, last_request_ts: Date.now() })
 }

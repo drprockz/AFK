@@ -8,7 +8,7 @@ const testStateDir = join(tmpdir(), 'afk-state-test-' + Date.now())
 mkdirSync(testStateDir, { recursive: true })
 process.env.AFK_STATE_DIR = testStateDir
 
-const { isAfk, setAfk, getSessionId, appendDigest, getAndClearDigest } =
+const { isAfk, setAfk, getSessionId, appendDigest, getAndClearDigest, getState, touchLastRequestTs } =
   await import('../src/afk/state.js')
 
 test('isAfk returns false by default', () => {
@@ -52,4 +52,21 @@ test('appendDigest and getAndClearDigest round-trip', () => {
   assert.strictEqual(entries[0].tool, 'Bash')
   // cleared
   assert.strictEqual(getAndClearDigest().length, 0)
+})
+
+test('getState returns the full state object', () => {
+  const state = getState()
+  assert.ok(typeof state === 'object')
+  assert.ok('afk' in state)
+  assert.ok('session_id' in state)
+  assert.ok('auto_afk_minutes' in state)
+})
+
+test('touchLastRequestTs updates last_request_ts without wiping other fields', () => {
+  setAfk(true)
+  touchLastRequestTs()
+  const state = getState()
+  assert.ok(typeof state.last_request_ts === 'number', 'last_request_ts should be a number')
+  assert.strictEqual(state.afk, true, 'afk flag must survive the write')
+  setAfk(false)
 })
