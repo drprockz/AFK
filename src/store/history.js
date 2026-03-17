@@ -147,6 +147,7 @@ export function listDecisions({ page = 1, limit = 50, tool, source, decision, da
   if (decision) { conditions.push('decision = ?'); params.push(decision) }
   if (date) {
     const day = new Date(date)
+    if (isNaN(day.getTime())) throw new TypeError(`listDecisions: invalid date "${date}"`)
     day.setUTCHours(0, 0, 0, 0)
     const start = day.getTime()
     const end = start + 86400000
