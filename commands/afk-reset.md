@@ -4,11 +4,7 @@ description: Clear all AFK decision history and start fresh. Preserves rules and
 ---
 
 ```bash
-SCRIPT="${PLUGIN_DIR}/scripts/afk-reset-cli.js"
-if [ -z "$PLUGIN_DIR" ] || [ ! -f "$SCRIPT" ]; then
-  SCRIPT="$(git rev-parse --show-toplevel 2>/dev/null)/scripts/afk-reset-cli.js"
-fi
-node "$SCRIPT"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/afk-reset-cli.js"
 ```
 
 This command requires confirmation. Read the output and report back to the user.
