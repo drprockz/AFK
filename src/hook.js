@@ -9,6 +9,20 @@ import { ensureSession, updateSessionStats, addTokenEstimate, estimateTokens } f
 
 const HARD_DEADLINE_MS = 25_000
 
+/**
+ * Wraps a behavior string in the canonical PermissionRequest hook output format.
+ * @param {string} behavior — 'allow' | 'deny' | 'ask'
+ * @returns {string} JSON string
+ */
+function hookResponse(behavior) {
+  return JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PermissionRequest',
+      decision: { behavior }
+    }
+  })
+}
+
 let input = ''
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', chunk => { input += chunk })
@@ -19,7 +33,7 @@ process.stdin.on('end', async () => {
     if (!request?.tool) throw new Error('malformed input: missing tool')
   } catch (err) {
     process.stderr.write(`afk: parse error: ${err.message}\n`)
-    process.stdout.write(JSON.stringify({ behavior: 'ask' }))
+    process.stdout.write(hookResponse('ask'))
     process.exit(0)
   }
 
@@ -28,7 +42,7 @@ process.stdin.on('end', async () => {
     const pluginRoot = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
     const cmd = request.input.command
     if (cmd.includes(pluginRoot + '/hooks/') || cmd.includes(pluginRoot + '/scripts/')) {
-      process.stdout.write(JSON.stringify({ behavior: 'allow' }))
+      process.stdout.write(hookResponse('allow'))
       process.exit(0)
     }
   }
@@ -48,11 +62,11 @@ process.stdin.on('end', async () => {
       updateSessionStats(request.session_id, result.decision ?? result.behavior ?? 'ask', result.source ?? 'chain')
       addTokenEstimate(request.session_id, estimateTokens(request.tool, request.input))
     } catch { /* non-fatal — session tracking must never block hook */ }
-    process.stdout.write(JSON.stringify({ behavior: result.behavior }))
+    process.stdout.write(hookResponse(result.behavior))
     process.exit(0)
   } catch (err) {
     process.stderr.write(`afk error: ${err.message}\n`)
-    process.stdout.write(JSON.stringify({ behavior: 'ask' }))
+    process.stdout.write(hookResponse('ask'))
     process.exit(0)
   }
 })

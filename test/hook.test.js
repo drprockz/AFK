@@ -25,7 +25,10 @@ function runHook(input) {
     proc.on('close', code => {
       if (code !== 0 && !stdout) return reject(new Error(`hook exited ${code}: ${stderr}`))
       try {
-        resolve(JSON.parse(stdout))
+        const raw = JSON.parse(stdout)
+        // Extract behavior from canonical hookSpecificOutput format or flat format
+        const behavior = raw?.hookSpecificOutput?.decision?.behavior ?? raw?.behavior
+        resolve({ behavior, _raw: raw })
       } catch {
         reject(new Error(`invalid JSON from hook: ${stdout}`))
       }
