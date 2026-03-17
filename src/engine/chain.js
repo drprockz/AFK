@@ -33,12 +33,12 @@ function extractFields(tool, input) {
  * Step 7 is simplified in Phase 1+2: notifications/dashboard are Phase 5/6.
  * @param {object} request  — { tool, input, session_id, cwd }
  * @param {number} deadline — Unix ms timestamp after which chain must return
- * @returns {Promise<{ behavior: 'allow'|'deny'|'ask', reason: string }>}
+ * @returns {Promise<{ behavior: 'allow'|'deny'|'ask', decision: string, source: string, reason: string }>}
  */
 export async function chain(request, deadline) {
   // Deadline guard — if already expired, fail closed immediately
   if (Date.now() >= deadline) {
-    return { behavior: 'ask', reason: 'deadline expired before chain start' }
+    return { behavior: 'ask', decision: 'ask', source: 'chain', reason: 'deadline expired before chain start' }
   }
 
   const { tool, input, session_id, cwd } = request
@@ -59,7 +59,7 @@ export async function chain(request, deadline) {
   if (sensitive.sensitive) {
     log('ask', 'chain', { reason: `Sensitive path: ${sensitive.matched}` })
     // Phase 3: in AFK mode, also fire-and-forget an urgent notification here
-    return { behavior: 'ask', reason: `Sensitive path detected: ${sensitive.matched}` }
+    return { behavior: 'ask', decision: 'ask', source: 'chain', reason: `Sensitive path detected: ${sensitive.matched}` }
   }
 
   // ── Step 2: Prompt injection ──────────────────────────────────────────────
@@ -67,7 +67,7 @@ export async function chain(request, deadline) {
   const injection = hasInjection(input)
   if (injection.injected) {
     log('deny', 'chain', { reason: injection.reason })
-    return { behavior: 'deny', reason: injection.reason }
+    return { behavior: 'deny', decision: 'deny', source: 'chain', reason: injection.reason }
   }
 
   // ── Step 3: Destructive classifier ───────────────────────────────────────
@@ -83,7 +83,7 @@ export async function chain(request, deadline) {
     const denyRule = matchRule({ tool, input, cwd })
     if (denyRule && denyRule.action === 'deny') {
       log('deny', 'rule', { rule_id: denyRule.id, reason: `Rule (destructive override): ${denyRule.label ?? denyRule.pattern}` })
-      return { behavior: 'deny', reason: `Matched deny rule: ${denyRule.label ?? denyRule.pattern}` }
+      return { behavior: 'deny', decision: 'deny', source: 'rule', reason: `Matched deny rule: ${denyRule.label ?? denyRule.pattern}` }
     }
 
     if (afkOn) {
@@ -112,12 +112,12 @@ export async function chain(request, deadline) {
         try { enqueueDeferred({ decisionsId, sessionId: session_id, tool, input, command, path }) } catch { /* non-fatal */ }
       }
       appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() })
-      return { behavior: 'ask', reason: `Destructive action deferred: ${destructive.reason}` }
+      return { behavior: 'ask', decision: 'defer', source: 'auto_defer', reason: `Destructive action deferred: ${destructive.reason}` }
     } else {
       // AFK-OFF: log as ask + chain source (hard safety gate, not a user/rule/prediction decision)
       log('ask', 'chain', { reason: `Destructive: ${destructive.reason} (${destructive.severity})` })
     }
-    return { behavior: 'ask', reason: `Destructive action detected: ${destructive.reason}` }
+    return { behavior: 'ask', decision: 'ask', source: 'chain', reason: `Destructive action detected: ${destructive.reason}` }
   }
 
   // ── Step 4: Static rules ──────────────────────────────────────────────────
@@ -125,7 +125,7 @@ export async function chain(request, deadline) {
   if (rule) {
     const behavior = rule.action === 'allow' ? 'allow' : 'deny'
     log(behavior, 'rule', { rule_id: rule.id, reason: `Rule: ${rule.label ?? rule.pattern}` })
-    return { behavior, reason: `Matched rule: ${rule.label ?? rule.pattern}` }
+    return { behavior, decision: behavior, source: 'rule', reason: `Matched rule: ${rule.label ?? rule.pattern}` }
   }
 
   // ── Step 5: Anomaly detector ──────────────────────────────────────────────
@@ -148,11 +148,11 @@ export async function chain(request, deadline) {
         try { enqueueDeferred({ decisionsId, sessionId: session_id, tool, input, command, path }) } catch { /* non-fatal */ }
       }
       appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() })
-      return { behavior: 'ask', reason: `Anomalous request deferred: ${anomaly.reason}` }
+      return { behavior: 'ask', decision: 'defer', source: 'auto_defer', reason: `Anomalous request deferred: ${anomaly.reason}` }
     } else {
       // AFK-OFF: interrupt user with explanation
       log('ask', 'chain', { reason: `Anomaly (score=${anomaly.score.toFixed(2)}): ${anomaly.reason}` })
-      return { behavior: 'ask', reason: `Unusual request detected: ${anomaly.reason}` }
+      return { behavior: 'ask', decision: 'ask', source: 'chain', reason: `Unusual request detected: ${anomaly.reason}` }
     }
   }
 
@@ -161,11 +161,11 @@ export async function chain(request, deadline) {
   if (prediction.confidence > 0.85) {
     const behavior = prediction.predicted
     log(behavior, 'prediction', { confidence: prediction.confidence, reason: prediction.explanation })
-    return { behavior, reason: prediction.explanation }
+    return { behavior, decision: behavior, source: 'prediction', reason: prediction.explanation }
   }
   if (prediction.confidence < 0.15) {
     log('deny', 'prediction', { confidence: prediction.confidence, reason: prediction.explanation })
-    return { behavior: 'deny', reason: prediction.explanation }
+    return { behavior: 'deny', decision: 'deny', source: 'prediction', reason: prediction.explanation }
   }
 
   // ── Step 7: Smart AFK fallback ────────────────────────────────────────────
@@ -178,15 +178,15 @@ export async function chain(request, deadline) {
     if (notifyResult === 'deny') {
       log('deny', 'notification', { reason: 'User denied via notification' })
       appendDigest({ tool, command, path, decision: 'deny', ts: Date.now() })
-      return { behavior: 'deny', reason: 'Denied via push notification' }
+      return { behavior: 'deny', decision: 'deny', source: 'notification', reason: 'Denied via push notification' }
     }
     // "allow", "skip", or "timeout" → fall through to auto-approve
     log('allow', 'auto_afk', { reason: `AFK mode: auto-approved (notify=${notifyResult})` })
     appendDigest({ tool, command, path, decision: 'allow', ts: Date.now() })
-    return { behavior: 'allow', reason: 'AFK mode: auto-approved' }
+    return { behavior: 'allow', decision: 'allow', source: 'auto_afk', reason: 'AFK mode: auto-approved' }
   }
 
   // source='prediction': this decision came from the predictor's uncertainty band (0.15–0.85)
   log('ask', 'prediction', { confidence: prediction.confidence, reason: 'Low confidence, user prompt required' })
-  return { behavior: 'ask', reason: 'Insufficient confidence — user input required' }
+  return { behavior: 'ask', decision: 'ask', source: 'prediction', reason: 'Insufficient confidence — user input required' }
 }
