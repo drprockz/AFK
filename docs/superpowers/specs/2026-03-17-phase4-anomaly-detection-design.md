@@ -8,13 +8,20 @@
 
 ## Context
 
-The `baselines` table and `updateBaseline` / `extractPattern` functions already exist in `src/store/history.js` and `src/hook.js`. The `hook.js` entry point already calls `updateBaseline(request)` unconditionally after `chain()` returns (implemented in Phase 1+2). `chain.js` has a placeholder comment at Step 5 where the anomaly check belongs.
+The `baselines` table and `updateBaseline` / `extractPattern` functions already exist in `src/store/history.js`. The `hook.js` entry point already calls `updateBaseline(request)` unconditionally after `chain()` returns (implemented in Phase 1+2). `chain.js` has a placeholder comment at Step 5 where the anomaly check belongs.
 
-Phase 4 is therefore two changes:
-1. Create `src/engine/anomaly.js` — the scorer.
-2. Replace the Step 5 placeholder in `chain.js` with a real `detectAnomaly()` call.
+Phase 4 requires three changes:
+1. Export `extractPattern` from `history.js` (currently module-private, needed by `anomaly.js`).
+2. Create `src/engine/anomaly.js` — the scorer.
+3. Replace the Step 5 placeholder in `chain.js` with a real `detectAnomaly()` call.
 
-No changes to `hook.js`, `db.js`, or `history.js` are needed.
+No changes to `hook.js` or `db.js` are needed.
+
+---
+
+## Step Order Note
+
+The existing `chain.js` runs static rules (Step 4) **before** anomaly detection (Step 5). This is a deliberate deviation from CLAUDE.md's original ordering (which lists anomaly as Step 4 and rules as Step 5). The inversion is intentional: a request that matches an explicit user-defined rule should resolve immediately without paying the DB cost of an anomaly lookup, and rule matches carry stronger intent than anomaly scores. This ordering is canonical for Phase 4 and forward.
 
 ---
 
@@ -22,10 +29,26 @@ No changes to `hook.js`, `db.js`, or `history.js` are needed.
 
 | File | Change | Responsibility |
 |------|--------|----------------|
+| `src/store/history.js` | **modify** | Add `export` keyword to `extractPattern` so it can be imported by `anomaly.js` |
 | `src/engine/anomaly.js` | **create** | Pure read-only scorer — reads `baselines` table, applies frequency tiers + outside-cwd check, returns `{ anomalous, score, reason }` |
-| `src/engine/chain.js` | **modify** | Replace Step 5 placeholder with `detectAnomaly()` call; add AFK-ON defer path and AFK-OFF ask path |
-| `test/anomaly.test.js` | **create** | 6 unit tests seeding the baselines table directly |
+| `src/engine/chain.js` | **modify** | Import `detectAnomaly`; replace Step 5 placeholder with real call; add AFK-ON defer path and AFK-OFF ask path |
+| `test/anomaly.test.js` | **create** | 7 unit tests seeding the baselines table directly |
 | `test/chain.test.js` | **modify** | 2 new tests: anomaly + AFK-OFF → ask, anomaly + AFK-ON → queue grows |
+
+---
+
+## `src/store/history.js` — export `extractPattern`
+
+Change line 96 from:
+```js
+function extractPattern(request) {
+```
+to:
+```js
+export function extractPattern(request) {
+```
+
+No other changes to `history.js`. The function body and behaviour are unchanged.
 
 ---
 
@@ -41,12 +64,17 @@ export function detectAnomaly(request)
 
 ### Pattern extraction
 
-Uses the same `extractPattern` logic already in `history.js` (imported and reused):
-- Bash: first two words of command — e.g. `"npm run test:unit --watch"` → `"npm run"`
-- File tools: directory path + `/*` — e.g. `"/home/darshan/project/src/Button.tsx"` → `"src/components/*"`
-- Other tools: tool name itself
+Imports and calls `extractPattern` from `'../store/history.js'`:
+```js
+import { extractPattern } from '../store/history.js'
+```
 
-The baseline lookup key is `(project_cwd, tool, pattern)` — identical to what `updateBaseline` writes.
+`extractPattern` behaviour (for reference — do not duplicate):
+- Bash: first two words of command — e.g. `"npm run test:unit --watch"` → `"npm run"`
+- File tools (Write/Read/Edit etc.): strips filename, keeps directory path + `/*` — e.g. `"/home/darshan/project/src/Button.tsx"` → `"/home/darshan/project/src/*"`
+- Other tools: returns the tool name itself
+
+The baseline lookup key is `(project_cwd, tool, pattern)` — identical to what `updateBaseline` writes, ensuring reads and writes use the same key format.
 
 ### Frequency signal
 
@@ -54,25 +82,27 @@ Query: `SELECT count FROM baselines WHERE project_cwd = ? AND tool = ? AND patte
 
 | count | score | label |
 |-------|-------|-------|
-| row not found (0) | 1.0 | "never seen in this project" |
+| row not found | 1.0 | "never seen in this project" |
 | 1–2 | 0.7 | "seen rarely (N times)" |
 | 3–9 | 0.3 | "seen occasionally (N times)" |
 | ≥ 10 | 0.0 | "common pattern" |
+
+Boundary clarification: count=2 → score 0.7 (rarely seen); count=3 → score 0.3 (occasionally seen); count=9 → score 0.3; count=10 → score 0.0.
 
 ### Outside-cwd signal (Bash only)
 
 Applied after the frequency score is computed.
 
-Suspicious prefixes (absolute paths that are not inside `cwd`):
+Suspicious prefixes — absolute paths that are not inside `cwd`:
 ```js
 const SUSPICIOUS_PREFIXES = ['/etc/', '/usr/', '/var/', '/root/', '/home/', '/tmp/', '~/']
 ```
 
-Check: scan `input.command` for any token that starts with a suspicious prefix AND does not start with `cwd`. If found:
-- `score = Math.max(score, 0.8)`
-- Append to reason: `"accesses path outside project: <matched prefix>"`
+Note: `/home/` is intentionally broad. A cross-project command like accessing `/home/user/other-project/` from within a different project will trigger this check. This is acceptable in Phase 4 — false positives for cross-project operations are a known trade-off, not a bug.
 
-The check is a simple substring scan — no full bash parsing. String tokens are split on whitespace.
+Check: split `input.command` on whitespace into tokens. For each token, check if it starts with a suspicious prefix AND does not start with `cwd`. If any such token is found:
+- `score = Math.max(score, 0.8)`
+- Append to reason: `"accesses path outside project: <matched token>"`
 
 ### Anomaly threshold
 
@@ -95,7 +125,12 @@ This ensures `detectAnomaly` never blocks the chain.
 
 ## `src/engine/chain.js` — Step 5 wiring
 
-Replace the current placeholder comment block with:
+Add import at top:
+```js
+import { detectAnomaly } from './anomaly.js'
+```
+
+Replace the current Step 5 placeholder comment block with:
 
 ```js
 // ── Step 5: Anomaly detector ──────────────────────────────────────────────
@@ -129,12 +164,7 @@ if (anomaly.anomalous) {
 Key points:
 - `logDecision` called directly (not via `log()`) in the AFK-ON branch to capture `lastInsertRowid` for the FK.
 - No `snapshot()` call — anomalies are suspicious but not necessarily destructive. Snapshot remains exclusive to the destructive classifier path.
-- The AFK-ON branch returns early (before the predictor) — same pattern as the destructive defer path.
-
-New import added to `chain.js`:
-```js
-import { detectAnomaly } from './anomaly.js'
-```
+- The AFK-ON branch returns early (before the predictor) — same pattern as the destructive defer path in Step 3.
 
 ---
 
@@ -160,15 +190,17 @@ Non-anomalous requests pass through Step 5 silently to Step 6.
 
 All tests use isolated `AFK_DB_DIR`. Baselines are seeded directly via `getDb().prepare(...).run(...)` — no chain involvement.
 
-| Test | Setup | Expected |
-|------|-------|----------|
-| never-seen pattern | no baseline row | `anomalous=true, score=1.0` |
-| count=1 (rarely seen) | baseline count=1 | `anomalous=true, score=0.7` |
-| count=2 (rarely seen) | baseline count=2 | `anomalous=true, score=0.7` |
-| count=5 (occasional) | baseline count=5 | `anomalous=false, score=0.3` |
-| count=10 (common) | baseline count=10 | `anomalous=false, score=0.0` |
-| outside-cwd Bash command | count=10, cmd contains `/etc/hosts` | `anomalous=true, score=0.8` |
-| DB failure (corrupt dir) | invalid AFK_DB_DIR | `anomalous=false, score=0` (no throw) |
+| # | Test | Setup | Expected |
+|---|------|-------|----------|
+| 1 | never-seen pattern | no baseline row | `anomalous=true, score=1.0` |
+| 2 | count=1 (rarely seen) | baseline count=1 | `anomalous=true, score=0.7` |
+| 3 | count=2 (rarely seen, boundary) | baseline count=2 | `anomalous=true, score=0.7` |
+| 4 | count=5 (occasionally seen) | baseline count=5 | `anomalous=false, score=0.3` |
+| 5 | count=10 (common, boundary) | baseline count=10 | `anomalous=false, score=0.0` |
+| 6 | outside-cwd Bash command | baseline count=10, cmd contains `/etc/hosts` | `anomalous=true, score=0.8` |
+| 7 | DB error — never throws | Run as last test: call `getDb().close()` to close the singleton connection, then call `detectAnomaly` | `anomalous=false, score=0` and no exception thrown |
+
+Test 7 detail: `getDb()` is a module-level singleton. Calling `.close()` on it closes the underlying SQLite connection. The next `detectAnomaly` call will attempt `.prepare(...)` on the closed connection, which throws — exercising the outer try/catch. This test MUST be last in the file since it permanently corrupts the singleton for that test process.
 
 ### `test/chain.test.js` additions
 
@@ -177,19 +209,19 @@ Two new tests appended after the existing suite:
 ```
 test('never-seen pattern + AFK-OFF → ask with anomaly reason')
   setAfk(false)
-  chain({ tool: 'Bash', input: { command: 'exotic-tool --flag' }, ... })
+  chain({ tool: 'Bash', input: { command: 'zz-anomaly-xyzzy-never-seen' }, ... })
   assert behavior === 'ask'
 
 test('never-seen pattern + AFK-ON → ask + deferred queue grows')
   setAfk(true)
   const before = getPendingItems().length
-  chain({ tool: 'Bash', input: { command: 'exotic-tool --flag' }, ... })
+  chain({ tool: 'Bash', input: { command: 'zz-anomaly-xyzzy-never-seen-2' }, ... })
   assert behavior === 'ask'
   assert getPendingItems().length > before
   setAfk(false)
 ```
 
-Note: these tests must use a command that won't match any existing baseline in the chain test DB. A sufficiently exotic command string (e.g. `'zz-test-anomaly-xyzzy'`) guarantees a fresh baseline.
+The command strings `'zz-anomaly-xyzzy-never-seen'` and `'zz-anomaly-xyzzy-never-seen-2'` are sufficiently exotic to guarantee no matching baseline row exists in the chain test DB, producing score=1.0 (anomalous). Use distinct strings for each test to avoid cross-test interference from `updateBaseline`.
 
 ---
 
