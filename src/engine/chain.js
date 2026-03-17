@@ -7,6 +7,9 @@ import { predict } from './predictor.js'
 import { isAfk, getSessionId, appendDigest } from '../afk/state.js'
 import { logDecision } from '../store/history.js'
 import { existsSync } from 'node:fs'
+import { checkAndAutoAfk } from '../afk/detector.js'
+import { snapshot } from '../safety/snapshot.js'
+import { enqueueDeferred } from '../store/queue.js'
 
 /**
  * Extracts command and path from a PermissionRequest input.
@@ -36,7 +39,8 @@ export async function chain(request, deadline) {
 
   const { tool, input, session_id, cwd } = request
   const { command, path } = extractFields(tool, input)
-  const afkOn = isAfk()
+  checkAndAutoAfk()           // may flip state to AFK on before we read it
+  const afkOn = isAfk()       // reads updated state
 
   function log(decision, source, opts = {}) {
     try {
@@ -79,9 +83,32 @@ export async function chain(request, deadline) {
     }
 
     if (afkOn) {
-      // AFK-ON: log as defer + auto_defer source per spec.
-      // Phase 3 will also add snapshot() call and deferred queue row insert here.
-      log('defer', 'auto_defer', { reason: `Destructive: ${destructive.reason} (${destructive.severity})` })
+      // AFK-ON: snapshot → log → enqueue → appendDigest → ask
+      // logDecision called DIRECTLY (not via log()) to capture lastInsertRowid for FK
+      // enqueueDeferred receives original `input`, NOT `inputWithExistence` (no internal annotations)
+      const remaining = deadline - Date.now()
+      let snapshotResult = { snapshotted: false, commit: null }
+      if (remaining > 3000) {
+        snapshotResult = await snapshot(cwd, destructive.reason)
+      }
+      const snapshotNote = snapshotResult.snapshotted
+        ? `Snapshot: ${snapshotResult.commit}`
+        : 'Snapshot: skipped'
+      let decisionsId
+      try {
+        decisionsId = logDecision({
+          session_id, tool, input, command, path,
+          decision: 'defer',
+          source: 'auto_defer',
+          project_cwd: cwd,
+          reason: `Destructive: ${destructive.reason} (${destructive.severity}). ${snapshotNote}`
+        })
+      } catch { /* non-fatal */ }
+      if (decisionsId != null) {
+        try { enqueueDeferred({ decisionsId, sessionId: session_id, tool, input, command, path }) } catch { /* non-fatal */ }
+      }
+      appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() })
+      return { behavior: 'ask', reason: `Destructive action deferred: ${destructive.reason}` }
     } else {
       // AFK-OFF: log as ask + chain source (hard safety gate, not a user/rule/prediction decision)
       log('ask', 'chain', { reason: `Destructive: ${destructive.reason} (${destructive.severity})` })

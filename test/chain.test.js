@@ -15,6 +15,7 @@ const { chain } = await import('../src/engine/chain.js')
 const { setAfk } = await import('../src/afk/state.js')
 const { logDecision } = await import('../src/store/history.js')
 const { addRule } = await import('../src/engine/rules.js')
+const { getPendingItems } = await import('../src/store/queue.js')
 
 const deadline = () => Date.now() + 25_000
 const cwd = '/projects/app'
@@ -76,10 +77,13 @@ test('no history (AFK on) → allow', async () => {
   setAfk(false)
 })
 
-test('destructive command → ask (AFK on — Phase 3 not yet wired)', async () => {
+test('AFK ON + destructive → ask returned (defer path now active)', async () => {
   setAfk(true)
+  const beforeCount = getPendingItems().length
   const r = await chain({ tool: 'Bash', input: { command: 'rm -rf build/' }, session_id: 's1', cwd }, deadline())
-  assert.strictEqual(r.behavior, 'ask')  // ask regardless of AFK until Phase 3 wires snapshot+queue
+  assert.strictEqual(r.behavior, 'ask')
+  const afterCount = getPendingItems().length
+  assert.ok(afterCount > beforeCount, 'deferred queue should have grown by at least 1')
   setAfk(false)
 })
 
@@ -97,4 +101,28 @@ test('expired deadline → ask', async () => {
   const expiredDeadline = Date.now() - 1  // already expired
   const r = await chain({ tool: 'Bash', input: { command: 'npm install' }, session_id: 's1', cwd }, expiredDeadline)
   assert.strictEqual(r.behavior, 'ask')
+})
+
+test('AFK ON + destructive → deferred item has correct tool and command', async () => {
+  setAfk(true)
+  const before = getPendingItems().length
+  await chain({ tool: 'Bash', input: { command: 'rm -rf tmp/' }, session_id: 's1', cwd }, deadline())
+  const items = getPendingItems()
+  assert.ok(items.length > before, 'a new deferred item must be inserted')
+  const newItem = items[items.length - 1]
+  assert.strictEqual(newItem.tool, 'Bash', 'deferred item must record correct tool')
+  assert.strictEqual(newItem.command, 'rm -rf tmp/', 'deferred item must record correct command')
+  setAfk(false)
+})
+
+test('AFK ON + destructive with near-expired deadline → snapshot skipped, item still deferred', async () => {
+  setAfk(true)
+  const before = getPendingItems().length
+  // deadline is only 2000ms away — remaining will be < 3000ms so snapshot is skipped
+  const nearExpired = Date.now() + 2000
+  const r = await chain({ tool: 'Bash', input: { command: 'rm -rf coverage/' }, session_id: 's1', cwd }, nearExpired)
+  assert.strictEqual(r.behavior, 'ask', 'should still return ask')
+  const after = getPendingItems().length
+  assert.ok(after > before, 'item must be deferred even when snapshot is skipped')
+  setAfk(false)
 })
