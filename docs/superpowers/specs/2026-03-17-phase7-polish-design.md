@@ -49,8 +49,7 @@ updateSessionStats(sessionId, decision, source)
   - `source='chain'`, `decision='ask'` → no counter (total_req only)
   - `source='auto_afk'` (any decision) → `auto_allow++`
   - `source='auto_defer'`, `decision='defer'` → `deferred++`
-  - `source='notification'`, `decision='allow'` → `auto_allow++`
-  - `source='notification'`, `decision='deny'` → `auto_deny++`
+  - `source='notification'`, `decision='deny'` → `auto_deny++` (only notification-sourced outcome; allow outcomes are logged as `auto_afk`)
   - `source='user'`, `decision='allow'` → `user_allow++`
   - `source='user'`, `decision='deny'` → `user_deny++`
   - `source='prediction'`, `decision='ask'` → no counter (total_req only — mid-band AFK-off escalation)
