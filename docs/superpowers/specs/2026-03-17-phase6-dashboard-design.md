@@ -96,7 +96,7 @@ Aggregated stats over the last 90 days.
 - Returns `{ by_tool, top_patterns, by_source }` matching the `/api/stats` response shape below
 - `by_tool`: `SELECT tool, COUNT(*) as total, SUM(decision='allow') as allow, SUM(decision='deny') as deny, SUM(decision='defer') as defer FROM decisions WHERE ts >= ? GROUP BY tool ORDER BY total DESC`
 - `top_patterns`: `SELECT tool, COALESCE(command, path, tool) as pattern, COUNT(*) as total, ROUND(AVG(decision='allow'), 2) as allow_rate FROM decisions WHERE ts >= ? GROUP BY tool, pattern ORDER BY total DESC LIMIT 20`
-- `by_source`: `SELECT source, COUNT(*) as count FROM decisions WHERE ts >= ? GROUP BY source` — returned as a flat object `{ user: N, rule: N, prediction: N, auto_afk: N }`
+- `by_source`: `SELECT source, COUNT(*) as count FROM decisions WHERE ts >= ? GROUP BY source` — pivot the result rows into a flat object: `Object.fromEntries(rows.map(r => [r.source, r.count]))`, e.g. `{ user: N, rule: N, prediction: N, auto_afk: N }`
 - Uses raw SQL via `getDb()` directly within `history.js`
 
 ### `getTodayStats()`
@@ -111,7 +111,7 @@ Decision counts for the current calendar day (UTC).
 
 ## Server Lifecycle
 
-- Server starts when `/afk on` is run: `scripts/afk-cli.js` must call `startServer()` when the `on` subcommand is processed (in addition to the existing AFK state toggle)
+- Server starts when `/afk on` is run: `scripts/afk-cli.js` (existing file) must be modified to add `import { startServer } from '../src/dashboard/server.js'` and call `startServer()` in the `on` branch (in addition to the existing AFK state toggle). This is the only existing file modified outside of `history.js`.
 - Server also starts when `/afk:review` is run
 - `startServer(port?)` is idempotent within a process via `_server` variable; EADDRINUSE from a second process is silently caught
 - Binds to `127.0.0.1` only — never exposed on network interfaces
@@ -144,7 +144,7 @@ Uses `getState()` from `state.js` and `getTodayStats()` + `getPendingCount()` fr
 
 ### `GET /api/decisions`
 Paginated decision history. Calls `listDecisions({ page, limit, tool, source, date })`.
-Query params: `page` (default 1), `limit` (default 50), `tool`, `source`, `date` (ISO date string).
+Query params: `page` (default 1), `limit` (default 50), `tool`, `source`, `decision`, `date` (ISO date string).
 ```json
 {
   "items": [{ "id": 1, "ts": 1700000000000, "tool": "Bash", "command": "npm run build", "decision": "allow", "source": "prediction", "confidence": 0.92 }],
@@ -177,7 +177,7 @@ All rules sorted by priority descending. Calls `listRules(null)` (global + all p
 ### `POST /api/rules`
 Create a rule. Body: `{ "tool", "pattern", "action", "label"?, "project"?, "priority"? }`.
 Required fields: `tool`, `pattern`, `action`. Missing required fields return 400 `{ "error": "missing field: <name>" }`.
-Calls `addRule(...)` from `engine/rules.js`. Returns created rule with generated `id` (uuid) and `created_ts`.
+Calls `addRule(...)` from `engine/rules.js` — which returns only the new rule's `id` string. After calling `addRule`, re-read the row from DB via `db.prepare('SELECT * FROM rules WHERE id = ?').get(id)` to return the full rule object (with `created_ts`, all fields).
 
 ### `DELETE /api/rules/:id`
 Delete a rule by id. Calls `removeRule(id)`. Always returns 200 `{ "deleted": true }` — idempotent (deleting a non-existent id is a no-op, not an error). `removeRule` does not return a value, so 404 is not detectable and not needed here.
