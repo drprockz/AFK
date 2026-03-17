@@ -33,8 +33,11 @@ export async function snapshot(cwd, reason) {
     const { stdout } = await execFileAsync('git', [
       'commit', '-m', `afk: checkpoint before ${reason} [skip ci]`
     ], { cwd })
-    // Git stdout format: "[branch-name abc1234] message"
-    const match = stdout.match(/\[[\w/.\-]+ ([0-9a-f]+)\]/)
+    // Git stdout formats:
+    //   normal:        "[main abc1234] message"
+    //   root commit:   "[main (root-commit) abc1234] message"
+    //   detached HEAD: "[(HEAD detached at abc1234) abc1234ef] message"
+    const match = stdout.match(/\[([^\]]+?) ([0-9a-f]{7,})\]/)
     const commit = match?.[1] ?? null
     return { snapshotted: true, commit }
   } catch (err) {
