@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/hook.js"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/bootstrap.sh"
           }
         ]
       }
