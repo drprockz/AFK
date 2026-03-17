@@ -19,6 +19,16 @@ export function detectAnomaly(request) {
     const pattern = extractPattern(request)
     const cwd = request.cwd ?? ''
 
+    // ── Minimum baseline check ──────────────────────────────────────────────
+    // On fresh installs, every command is "never seen" → score 1.0 → everything
+    // gets flagged as anomalous. Skip anomaly detection until we have enough data.
+    const totalBaselines = db.prepare(
+      `SELECT COALESCE(SUM(count), 0) AS total FROM baselines WHERE project_cwd = ?`
+    ).get(cwd)?.total ?? 0
+    if (totalBaselines < 10) {
+      return { anomalous: false, score: 0, reason: 'insufficient baseline data (fresh install)' }
+    }
+
     // ── Frequency signal ────────────────────────────────────────────────────
     const row = db.prepare(`
       SELECT count FROM baselines

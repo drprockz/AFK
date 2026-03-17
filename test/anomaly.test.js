@@ -19,6 +19,12 @@ function seedBaseline({ project_cwd, tool, pattern, count }) {
 
 const CWD = '/projects/myapp'
 
+// Seed enough total baselines (≥10) so anomaly detection activates.
+// Without this, the minimum-baseline check returns early (fresh install guard).
+for (let i = 0; i < 5; i++) {
+  seedBaseline({ project_cwd: CWD, tool: 'Read', pattern: `src/file${i}.*`, count: 3 })
+}
+
 test('never-seen pattern → anomalous=true, score=1.0', () => {
   const r = detectAnomaly({ tool: 'Bash', input: { command: 'zz-never-seen-xyzzy' }, cwd: CWD })
   assert.strictEqual(r.anomalous, true)
