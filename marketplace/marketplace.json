@@ -6,7 +6,7 @@
       "name": "afk",
       "description": "Intelligent permission layer for Claude Code. AFK mode, behavior prediction, destructive action deferral.",
       "version": "0.1.0",
-      "source": "https://github.com/drprockz/afk",
+      "source": "https://github.com/drprockz/AFK",
       "categories": ["safety", "productivity", "automation"]
     }
   ]
