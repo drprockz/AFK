@@ -2,20 +2,10 @@
   "name": "afk",
   "version": "0.1.0",
   "description": "Intelligent permission layer for Claude Code. Learns your patterns, handles AFK mode, defers destructive actions, never lets Claude stall.",
-  "author": "drprockz",
-  "license": "MIT",
-  "homepage": "https://github.com/drprockz/afk",
-  "hooks": {
-    "PermissionRequest": {
-      "command": "node",
-      "args": ["${pluginDir}/src/hook.js"]
-    }
+  "author": {
+    "name": "drprockz",
+    "email": "drprockz@users.noreply.github.com"
   },
-  "commands": [
-    { "name": "afk", "description": "Toggle AFK mode on/off or set a duration" },
-    { "name": "afk:review", "description": "Open AFK web dashboard in browser" },
-    { "name": "afk:stats", "description": "Show today's decision summary in terminal" },
-    { "name": "afk:rules", "description": "List, add, or remove static rules" },
-    { "name": "afk:reset", "description": "Clear decision history and start fresh" }
-  ]
+  "license": "MIT",
+  "homepage": "https://github.com/drprockz/AFK"
 }
