@@ -11,3 +11,4 @@ Start the dashboard server and open it in the browser:
 
 Read the output and report the URL to the user.
 The dashboard shows decision history, deferred queue, patterns, rules, and session digest.
+This command needs one-time approval on first use.

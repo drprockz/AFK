@@ -3,17 +3,55 @@ name: afk
 description: Toggle AFK mode on/off, set a duration, or check status
 ---
 
-Run the AFK CLI with the user's argument:
+The AFK state file lives at `~/.claude/afk/state.json`. Read and write it directly — no bash needed.
 
-```bash
-"${CLAUDE_PLUGIN_ROOT}/hooks/run.sh" afk-cli.js <arg>
-```
+## Handling the user's argument
 
-Where `<arg>` is exactly what the user typed after `/afk` (e.g. `on`, `off`, `30m`, `status`).
-If the user typed `/afk` with no argument, use `status`.
+Parse what follows `/afk`. It will be one of: `on`, `off`, `status`, a duration like `30m` or `2h`, or empty (treat as `status`).
 
-Read the output and present it clearly to the user.
+### `/afk status` (or no argument)
 
-If the output lists pending deferred items, ask the user to approve or deny each one.
-For each decision, run: `"${CLAUDE_PLUGIN_ROOT}/hooks/run.sh" afk-cli.js resolve <id> allow|deny`
-Confirm each resolution to the user as you go.
+1. Read `~/.claude/afk/state.json`
+2. Report:
+   - Whether AFK mode is on or off
+   - If on: since when, and until when (if timed)
+   - If `afk_until` is in the past, AFK has expired — report as OFF
+   - Show `digest` array length as "actions logged this session"
+
+### `/afk on`
+
+1. Read `~/.claude/afk/state.json`
+2. Write back with these changes:
+   - `"afk": true`
+   - `"afk_since": <current unix ms timestamp>`
+   - `"afk_until": null`
+   - Keep all other fields unchanged
+3. Confirm: "AFK mode ON. Safe actions will be auto-approved, destructive actions deferred."
+
+### `/afk off`
+
+1. Read `~/.claude/afk/state.json`
+2. Check the `digest` array — summarize what happened while AFK:
+   - Count actions by decision type (allow, deny, defer)
+   - List any deferred items
+3. Write back with:
+   - `"afk": false`
+   - `"afk_since": null`
+   - `"afk_until": null`
+   - `"digest": []` (clear after showing)
+   - Keep all other fields unchanged
+4. If there were deferred actions, remind the user: "Run /afk:review to process deferred items."
+
+### `/afk <duration>` (e.g., `30m`, `1h`, `2h30m`)
+
+1. Parse the duration into minutes:
+   - `30m` → 30 minutes
+   - `1h` → 60 minutes
+   - `2h30m` → 150 minutes
+2. Read `~/.claude/afk/state.json`
+3. Write back with:
+   - `"afk": true`
+   - `"afk_since": <current unix ms timestamp>`
+   - `"afk_until": <current unix ms + duration in ms>`
+   - Keep all other fields unchanged
+4. Confirm: "AFK mode ON for <duration>. Will auto-return at <time>."
