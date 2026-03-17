@@ -5,6 +5,7 @@
 
 import { chain } from './engine/chain.js'
 import { updateBaseline } from './store/history.js'
+import { ensureSession, updateSessionStats, addTokenEstimate, estimateTokens } from './store/session.js'
 
 const HARD_DEADLINE_MS = 25_000
 
@@ -32,6 +33,11 @@ process.stdin.on('end', async () => {
     ])
     // Post-chain side effect: update anomaly baseline unconditionally
     try { updateBaseline(request) } catch { /* non-fatal */ }
+    try {
+      ensureSession(request.session_id, request.cwd)
+      updateSessionStats(request.session_id, result.decision ?? result.behavior ?? 'ask', result.source ?? 'chain')
+      addTokenEstimate(request.session_id, estimateTokens(request.tool, request.input))
+    } catch { /* non-fatal — session tracking must never block hook */ }
     process.stdout.write(JSON.stringify({ behavior: result.behavior }))
     process.exit(0)
   } catch (err) {
