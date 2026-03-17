@@ -16,9 +16,32 @@ const { setAfk } = await import('../src/afk/state.js')
 const { logDecision } = await import('../src/store/history.js')
 const { addRule } = await import('../src/engine/rules.js')
 const { getPendingItems } = await import('../src/store/queue.js')
+const { getDb } = await import('../src/store/db.js')
 
 const deadline = () => Date.now() + 25_000
 const cwd = '/projects/app'
+
+/**
+ * Seeds a baseline row so anomaly detection treats this pattern as common (score=0.0).
+ * @param {string} tool
+ * @param {string} pattern  — extracted pattern (first two words for Bash, dir/* for files)
+ * @param {number} count    — default 10 → anomaly score 0.0
+ */
+function seedBaseline(tool, pattern, count = 10) {
+  getDb().prepare(`
+    INSERT INTO baselines (project_cwd, tool, pattern, count, last_seen)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(project_cwd, tool, pattern) DO UPDATE SET count = excluded.count
+  `).run(cwd, tool, pattern, count, Date.now())
+}
+
+// Seed baselines for all commands used in predictor-path tests so anomaly detection
+// sees them as common (count >= 10 → score 0.0) and passes through to the predictor.
+// Pattern for Bash = first two space-separated words of command.
+seedBaseline('Bash', 'npm run')       // used in: high-confidence history → allow
+seedBaseline('Bash', 'yarn dev')      // used in: no history (AFK off) → ask
+seedBaseline('Bash', 'yarn typecheck') // used in: no history (AFK on) → allow
+seedBaseline('Bash', 'yarn danger')   // used in: high-deny history → deny
 
 test('sensitive path → ask (even in AFK mode)', async () => {
   setAfk(true)
@@ -124,5 +147,29 @@ test('AFK ON + destructive with near-expired deadline → snapshot skipped, item
   assert.strictEqual(r.behavior, 'ask', 'should still return ask')
   const after = getPendingItems().length
   assert.ok(after > before, 'item must be deferred even when snapshot is skipped')
+  setAfk(false)
+})
+
+test('never-seen Bash command + AFK-OFF → ask with anomaly reason', async () => {
+  setAfk(false)
+  const r = await chain(
+    { tool: 'Bash', input: { command: 'zz-anomaly-xyzzy-never-seen' }, session_id: 's1', cwd },
+    deadline()
+  )
+  assert.strictEqual(r.behavior, 'ask')
+  assert.ok(r.reason.toLowerCase().includes('unusual') || r.reason.toLowerCase().includes('anomal'),
+    `reason should mention anomaly, got: ${r.reason}`)
+})
+
+test('never-seen Bash command + AFK-ON → ask + deferred queue grows', async () => {
+  setAfk(true)
+  const before = getPendingItems().length
+  const r = await chain(
+    { tool: 'Bash', input: { command: 'zz-anomaly-xyzzy-never-seen-2' }, session_id: 's1', cwd },
+    deadline()
+  )
+  assert.strictEqual(r.behavior, 'ask')
+  const after = getPendingItems().length
+  assert.ok(after > before, `deferred queue should have grown (before=${before}, after=${after})`)
   setAfk(false)
 })

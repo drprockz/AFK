@@ -4,6 +4,7 @@ import { hasInjection } from './injection.js'
 import { classify } from './classifier.js'
 import { matchRule } from './rules.js'
 import { predict } from './predictor.js'
+import { detectAnomaly } from './anomaly.js'
 import { isAfk, getSessionId, appendDigest } from '../afk/state.js'
 import { logDecision } from '../store/history.js'
 import { existsSync } from 'node:fs'
@@ -125,8 +126,32 @@ export async function chain(request, deadline) {
   }
 
   // ── Step 5: Anomaly detector ──────────────────────────────────────────────
-  // Phase 4 — placeholder, always passes through
-  // anomaly detection wired in Phase 4 plan
+  const anomaly = detectAnomaly({ tool, input, cwd })
+  if (anomaly.anomalous) {
+    if (afkOn) {
+      // AFK-ON: log as defer, enqueue, appendDigest — no snapshot (not destructive)
+      // logDecision called DIRECTLY (not via log()) to capture lastInsertRowid for FK
+      let decisionsId
+      try {
+        decisionsId = logDecision({
+          session_id, tool, input, command, path,
+          decision: 'defer',
+          source: 'auto_defer',
+          project_cwd: cwd,
+          reason: `Anomaly (score=${anomaly.score.toFixed(2)}): ${anomaly.reason}`
+        })
+      } catch { /* non-fatal */ }
+      if (decisionsId != null) {
+        try { enqueueDeferred({ decisionsId, sessionId: session_id, tool, input, command, path }) } catch { /* non-fatal */ }
+      }
+      appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() })
+      return { behavior: 'ask', reason: `Anomalous request deferred: ${anomaly.reason}` }
+    } else {
+      // AFK-OFF: interrupt user with explanation
+      log('ask', 'chain', { reason: `Anomaly (score=${anomaly.score.toFixed(2)}): ${anomaly.reason}` })
+      return { behavior: 'ask', reason: `Unusual request detected: ${anomaly.reason}` }
+    }
+  }
 
   // ── Step 6: Behavior predictor ────────────────────────────────────────────
   const prediction = predict({ tool, input, cwd })
