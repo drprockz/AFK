@@ -9,9 +9,9 @@
     "setup": "node scripts/setup.js"
   },
   "dependencies": {
-    "better-sqlite3": "latest"
+    "better-sqlite3": "latest",
+    "express": "^5.2.1"
   },
-  "devDependencies": {},
   "engines": {
     "node": ">=18"
   },
