@@ -93,7 +93,7 @@ export function queryByPattern({ tool, pattern, project_cwd }) {
  * @param {object} request
  * @returns {string}
  */
-function extractPattern(request) {
+export function extractPattern(request) {
   if (request.tool === 'Bash') {
     const cmd = request.input?.command ?? ''
     return cmd.split(' ').slice(0, 2).join(' ')
