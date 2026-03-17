@@ -57,6 +57,8 @@ router.post('/queue/:id', async (req, res) => {
   }
   const id = Number(req.params.id)
   const row = getItemById(id)
+  if (!row) return res.status(404).json({ error: 'queue item not found' })
+  if (row.reviewed) return res.status(409).json({ error: 'item already reviewed', final: row.final })
   resolveItem(id, action)
   // fire-and-forget notification
   try {
@@ -87,13 +89,17 @@ router.post('/rules', (req, res) => {
       return res.status(400).json({ error: `missing field: ${field}` })
     }
   }
+  if (action !== 'allow' && action !== 'deny') {
+    return res.status(400).json({ error: 'action must be allow or deny' })
+  }
   const id = addRule({ tool, pattern, action, label, project, priority })
   res.json(getRule(id))
 })
 
 // ── DELETE /api/rules/:id ─────────────────────────────────────────────────────
 router.delete('/rules/:id', (req, res) => {
-  removeRule(req.params.id)
+  const changes = removeRule(req.params.id)
+  if (!changes) return res.status(404).json({ error: 'rule not found' })
   res.json({ deleted: true })
 })
 

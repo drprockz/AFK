@@ -66,7 +66,7 @@ export function addRule({ tool, pattern, action, label, project, priority = 0 })
  * @param {string} id
  */
 export function removeRule(id) {
-  getDb().prepare('DELETE FROM rules WHERE id = ?').run(id)
+  return getDb().prepare('DELETE FROM rules WHERE id = ?').run(id).changes
 }
 
 /**
