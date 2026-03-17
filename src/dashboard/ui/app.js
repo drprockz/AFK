@@ -62,7 +62,7 @@ function fmtTs(ts) {
 
 function decisionBadge(d) {
   const cls = { allow:'allow', deny:'deny', defer:'defer', ask:'ask' }[d] || 'ask'
-  return `<span class="badge-${cls}">${d}</span>`
+  return `<span class="badge-${cls}">${cls}</span>`
 }
 
 function updateQueueBadge(count) {
@@ -70,6 +70,16 @@ function updateQueueBadge(count) {
   if (!el) return
   el.textContent = count
   el.classList.toggle('visible', count > 0)
+}
+
+// ── HTML escaping ─────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────────
@@ -90,10 +100,10 @@ async function renderOverview() {
 
   const recentRows = (recent?.items || []).map(i => {
     const icon = i.decision === 'allow' ? '✓' : i.decision === 'deny' ? '✗' : '⏸'
-    const cmd = (i.command || i.path || i.tool).slice(0, 50)
+    const cmd = esc((i.command || i.path || i.tool).slice(0, 50))
     return `<div class="recent-row">
       <span class="recent-icon">${icon}</span>
-      <span class="badge-tool">${i.tool}</span>
+      <span class="badge-tool">${esc(i.tool)}</span>
       <span class="recent-cmd">${cmd}</span>
       <span class="recent-time">${timeAgo(i.ts)}</span>
     </div>`
@@ -156,15 +166,15 @@ async function renderQueue() {
   }
 
   const cards = items.map(item => {
-    const cmd = item.command || item.path || item.tool
+    const cmd = esc(item.command || item.path || item.tool)
     const ts = fmtTs(item.ts)
-    return `<div class="queue-item" id="qi-${item.id}">
+    return `<div class="queue-item" id="qi-${item.id}" data-id="${item.id}">
       <div class="queue-item-header">
-        <span class="badge-tool">${item.tool}</span>
+        <span class="badge-tool">${esc(item.tool)}</span>
         <span class="muted" style="font-size:11px">${ts}</span>
       </div>
       <div class="queue-item-cmd">${cmd}</div>
-      <div class="queue-item-meta">${item.session_id}</div>
+      <div class="queue-item-meta">${esc(item.session_id)}</div>
       <div class="queue-item-actions">
         <button class="btn-allow" onclick="reviewItem(${item.id},'allow')">✓ Allow</button>
         <button class="btn-deny"  onclick="reviewItem(${item.id},'deny')">✗ Deny</button>
@@ -205,7 +215,7 @@ async function approveAll() {
   allBtns.forEach(b => b.disabled = true)
   const errEl = document.getElementById('queue-error')
   for (const item of items) {
-    const id = item.id.replace('qi-', '')
+    const id = item.dataset.id
     try {
       await apiFetch(`/queue/${id}`, {
         method: 'POST',
@@ -252,9 +262,7 @@ async function renderHistory() {
   await loadHistory(1)
 }
 
-let _historyPage = 1
 async function loadHistory(page) {
-  _historyPage = page
   const tool   = document.getElementById('f-tool')?.value   || ''
   const source = document.getElementById('f-source')?.value || ''
   const date   = document.getElementById('f-date')?.value   || ''
@@ -266,14 +274,14 @@ async function loadHistory(page) {
   if (!data) return
 
   const rows = data.items.map(i => {
-    const cmd = (i.command || i.path || '—').slice(0, 40)
+    const cmd = esc((i.command || i.path || '—').slice(0, 40))
     const conf = i.confidence != null ? Math.round(i.confidence * 100) + '%' : '—'
     return `<tr>
       <td class="muted">${fmtTs(i.ts)}</td>
-      <td><span class="badge-tool">${i.tool}</span></td>
+      <td><span class="badge-tool">${esc(i.tool)}</span></td>
       <td class="mono">${cmd}</td>
       <td>${decisionBadge(i.decision)}</td>
-      <td><span class="badge-source">${i.source}</span></td>
+      <td><span class="badge-source">${esc(i.source)}</span></td>
       <td class="muted">${conf}</td>
     </tr>`
   }).join('')
@@ -307,8 +315,8 @@ async function renderPatterns() {
   const patternRows = stats.top_patterns.map(p => {
     const pct = Math.round((p.allow_rate || 0) * 100)
     return `<tr>
-      <td><span class="badge-tool">${p.tool}</span></td>
-      <td class="mono">${p.pattern.slice(0, 50)}</td>
+      <td><span class="badge-tool">${esc(p.tool)}</span></td>
+      <td class="mono">${esc(p.pattern.slice(0, 50))}</td>
       <td class="muted">${p.total}</td>
       <td>
         <div class="rate-bar">
@@ -320,11 +328,11 @@ async function renderPatterns() {
     </tr>`
   }).join('')
 
+  const sourceTotal = Object.values(stats.by_source).reduce((a, b) => a + b, 0)
   const sourceRows = Object.entries(stats.by_source).map(([src, count]) => {
-    const total = Object.values(stats.by_source).reduce((a,b) => a+b, 0)
-    const pct = total > 0 ? Math.round(count / total * 100) : 0
+    const pct = sourceTotal > 0 ? Math.round(count / sourceTotal * 100) : 0
     return `<div class="bar-row">
-      <div class="bar-label">${src}</div>
+      <div class="bar-label">${esc(src)}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
       <div class="bar-value">${count}</div>
     </div>`
@@ -355,17 +363,17 @@ async function renderRules() {
   _projectCwd = status?.project_cwd ?? null
 
   const rows = rules.map(r => {
-    const scope = r.project ? r.project.split('/').pop() : 'global'
+    const scope = r.project ? esc(r.project.split('/').pop()) : 'global'
     const created = fmtTs(r.created_ts)
     return `<tr>
       <td class="muted">${r.priority}</td>
-      <td><span class="badge-tool">${r.tool}</span></td>
-      <td class="mono">${r.pattern}</td>
+      <td><span class="badge-tool">${esc(r.tool)}</span></td>
+      <td class="mono">${esc(r.pattern)}</td>
       <td>${decisionBadge(r.action)}</td>
-      <td>${r.label || '—'}</td>
+      <td>${r.label ? esc(r.label) : '—'}</td>
       <td class="muted">${scope}</td>
       <td class="muted">${created}</td>
-      <td><button onclick="deleteRule('${r.id}')">✕</button></td>
+      <td><button class="btn-delete-rule" data-id="${esc(r.id)}">✕</button></td>
     </tr>`
   }).join('')
 
@@ -417,6 +425,11 @@ async function renderRules() {
       </table>
     </div>
   `
+
+  document.getElementById('content').addEventListener('click', e => {
+    const btn = e.target.closest('.btn-delete-rule')
+    if (btn) deleteRule(btn.dataset.id)
+  })
 }
 
 function toggleAddForm() {
@@ -466,5 +479,9 @@ async function fetchAndRenderDigest() {
   const data = await apiFetch('/digest').catch(() => null)
   const el = document.getElementById('digest-content')
   if (!el || !data) return
-  el.innerHTML = `<pre class="digest-pre">${data.digest}</pre>`
+  const pre = document.createElement('pre')
+  pre.className = 'digest-pre'
+  pre.textContent = data.digest
+  el.innerHTML = ''
+  el.appendChild(pre)
 }
