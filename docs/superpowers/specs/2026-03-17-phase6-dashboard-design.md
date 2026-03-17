@@ -111,11 +111,37 @@ Decision counts for the current calendar day (UTC).
 
 ## Server Lifecycle
 
-- Server starts when `/afk on` is run: `scripts/afk-cli.js` (existing file) must be modified to add `import { startServer } from '../src/dashboard/server.js'` and call `startServer()` in the `on` branch (in addition to the existing AFK state toggle). This is the only existing file modified outside of `history.js`.
-- Server also starts when `/afk:review` is run
-- `startServer(port?)` is idempotent within a process via `_server` variable; EADDRINUSE from a second process is silently caught
+The dashboard server must persist across command invocations (slash commands spawn a Node process that exits after printing output). To achieve this, `afk-review-cli.js` spawns the server as a **detached child process**:
+
+```js
+import { spawn } from 'node:child_process'
+import { createConnection } from 'node:net'
+
+// Check if server already running on port 6789
+function isPortInUse(port) {
+  return new Promise(resolve => {
+    const conn = createConnection(port, '127.0.0.1')
+    conn.on('connect', () => { conn.destroy(); resolve(true) })
+    conn.on('error', () => resolve(false))
+  })
+}
+
+const alreadyRunning = await isPortInUse(6789)
+if (!alreadyRunning) {
+  const child = spawn(process.execPath, [serverScriptPath], {
+    detached: true,
+    stdio: 'ignore'
+  })
+  child.unref() // parent exits, child persists
+}
+```
+
+`server.js` in standalone mode (run directly, not imported) calls `startServer()` on load.
+
+- `afk-cli.js` (existing file) does NOT need modification for server startup — the server is only started by `afk-review-cli.js`. Remove the "server starts on /afk on" requirement — it was architecturally unsound (CLI process exits immediately, killing the server).
+- The only existing file modified is `src/store/history.js` (new query functions).
 - Binds to `127.0.0.1` only — never exposed on network interfaces
-- Tests inject a different port via `startServer(16789)` to avoid conflicts
+- Tests import `startServer(16789)` directly (not via detached spawn) to keep the server in-process for reliable test teardown
 
 ---
 
@@ -143,7 +169,7 @@ Uses `getState()` from `state.js` and `getTodayStats()` + `getPendingCount()` fr
 `auto_rate` is `Math.round(auto_approved / total * 100)`, or 0 if total is 0.
 
 ### `GET /api/decisions`
-Paginated decision history. Calls `listDecisions({ page, limit, tool, source, date })`.
+Paginated decision history. Calls `listDecisions({ page, limit, tool, source, decision, date })`.
 Query params: `page` (default 1), `limit` (default 50), `tool`, `source`, `decision`, `date` (ISO date string).
 ```json
 {
@@ -202,7 +228,7 @@ When there is no activity, `buildDigest` returns the sentinel string `"No activi
 
 ### `POST /api/afk`
 Toggle AFK mode. Body: `{ "on": boolean, "duration"?: number }`.
-Calls `setAfk(on, duration)`. Returns new state via `getState()`.
+`duration` is in **minutes** (maps to `durationMinutes` parameter of `setAfk`). Calls `setAfk(on, duration)`. Returns new state via `getState()`.
 
 ### `GET /api/export`
 Download decisions as CSV or JSON.
@@ -221,7 +247,7 @@ For CSV: header row is `id,ts,tool,command,path,decision,source,confidence`; fet
 
 ### `#queue`
 - **Header**: "Queue — N pending" + "Approve All" button
-- **Item cards**: severity badge (CRITICAL/HIGH from classifier), tool, command/path in monospace, project path, Allow/Deny buttons
+- **Item cards**: tool badge (Bash/Write/Edit/etc.), command/path in monospace, project path, timestamp, Allow/Deny buttons. No severity badge — severity is a chain-time artifact not stored in the deferred table.
 - On Allow/Deny: `POST /api/queue/:id`, remove item from list with CSS fade-out, decrement queue count in sidebar badge
 - **Approve All**: disables all buttons during execution, iterates each pending item sequentially calling `POST /api/queue/:id` with `action: "allow"`. On any error, shows an inline error message and stops. No batch endpoint.
 - Empty state: "No pending items" message
@@ -258,10 +284,10 @@ node "$SCRIPT" <args>
 ```
 
 ### `commands/afk-review.md` → `scripts/afk-review-cli.js`
-Imports `startServer` from `../src/dashboard/server.js`, calls `startServer()`, then uses `child_process.execSync` to open `http://localhost:6789` (`open` macOS, `xdg-open` Linux, `start` Windows — detect via `process.platform`).
+Checks if port 6789 is in use (TCP probe). If not, spawns `src/dashboard/server.js` as a detached child process (`detached: true, stdio: 'ignore'`) and calls `child.unref()` so the parent exits without killing the server. Then opens `http://localhost:6789` via `child_process.execSync` (`open` macOS, `xdg-open` Linux, `start` Windows — detect via `process.platform`). If port already in use, skips spawn and goes straight to opening the browser.
 
 ### `commands/afk-stats.md` → `scripts/afk-stats-cli.js`
-Imports `getTodayStats`, `getPendingCount` from `../src/store/history.js`, `isAfk` from `../src/afk/state.js`, `listDecisions` from `../src/store/history.js`. Prints formatted terminal summary:
+Imports `getTodayStats`, `getDecisionStats` from `../src/store/history.js`, `getPendingCount` from `../src/store/queue.js`, `isAfk` from `../src/afk/state.js`. Prints formatted terminal summary:
 ```
 AFK Stats — today
   Total requests:    26
@@ -311,6 +337,7 @@ Prints "Type 'reset' to confirm:" and reads a line from stdin (`readline` module
   - `GET /api/digest` → assert `digest` string field
   - `POST /api/afk` → assert state reflects new value
   - `GET /api/export?format=csv` → assert `Content-Disposition` header, CSV row format
+  - `GET /api/export?format=json` → assert `Content-Disposition` header, JSON array body
 - Teardown: close server, delete temp dir
 
 **No browser automation** — API tests only.
