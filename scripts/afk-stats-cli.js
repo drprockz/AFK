@@ -21,11 +21,11 @@ console.log(`  User-reviewed:     ${Math.max(0, userReviewed)}`)
 console.log(`  Deferred (queue):  ${pending} pending`)
 console.log(`  AFK mode:          ${afkOn ? 'ON' : 'OFF'}`)
 
-const top3 = stats.top_patterns.slice(0, 3)
+const top3 = stats.top_patterns.filter(p => p.allow_rate > 0.5).slice(0, 3)
 if (top3.length > 0) {
   console.log('\nTop auto-approved patterns:')
   top3.forEach((p, i) => {
-    console.log(`  ${i+1}. ${p.tool}: ${p.pattern}`)
+    console.log(`  ${i+1}. ${p.tool}: ${p.pattern} (${Math.round(p.allow_rate * 100)}% allow)`)
   })
 }
 console.log()

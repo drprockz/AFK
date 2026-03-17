@@ -33,6 +33,10 @@ if (!subcmd) {
     console.error('Usage: afk:rules add tool=<t> pattern=<p> action=allow|deny [label=<l>] [priority=<n>]')
     process.exit(1)
   }
+  if (kv.action !== 'allow' && kv.action !== 'deny') {
+    console.error('action must be allow or deny')
+    process.exit(1)
+  }
   const id = addRule({
     tool:     kv.tool,
     pattern:  kv.pattern,
@@ -45,7 +49,8 @@ if (!subcmd) {
 } else if (subcmd === 'remove') {
   const id = rest[0]
   if (!id) { console.error('Usage: afk:rules remove <id>'); process.exit(1) }
-  removeRule(id)
+  const changes = removeRule(id)
+  if (!changes) { console.error(`No rule found with id: ${id}`); process.exit(1) }
   console.log(`Deleted rule ${id}`)
 
 } else {

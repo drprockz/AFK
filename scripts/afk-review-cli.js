@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/afk-review-cli.js
-import { spawn, execSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { createConnection } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -24,17 +24,22 @@ if (!alreadyRunning) {
     stdio: 'ignore'
   })
   child.unref()
-  // brief pause to let server bind
-  await new Promise(r => setTimeout(r, 300))
+  // Poll up to 3s for the server to bind
+  let ready = false
+  for (let i = 0; i < 15; i++) {
+    await new Promise(r => setTimeout(r, 200))
+    if (await isPortInUse(PORT)) { ready = true; break }
+  }
+  if (!ready) {
+    process.stderr.write('afk: dashboard server failed to start\n')
+    process.exit(1)
+  }
 }
 
 const url = `http://localhost:${PORT}`
-const cmd = process.platform === 'darwin' ? `open "${url}"`
-          : process.platform === 'win32'  ? `start "${url}"`
-          : `xdg-open "${url}"`
-try {
-  execSync(cmd)
-  console.log(`Dashboard: ${url}`)
-} catch {
-  console.log(`Dashboard running at: ${url}`)
-}
+const platform = process.platform
+const [browserCmd, browserArgs] = platform === 'darwin' ? ['open', [url]]
+                                : platform === 'win32'  ? ['cmd', ['/c', 'start', url]]
+                                : ['xdg-open', [url]]
+spawn(browserCmd, browserArgs, { stdio: 'ignore', detached: true }).unref()
+console.log(`Dashboard: ${url}`)

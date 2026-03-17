@@ -11,10 +11,13 @@ rl.question("Type 'reset' to confirm (this cannot be undone): ", answer => {
     process.exit(0)
   }
   const db = getDb()
-  const d = db.prepare('DELETE FROM decisions').run().changes
-  const s = db.prepare('DELETE FROM sessions').run().changes
-  const q = db.prepare('DELETE FROM deferred').run().changes
-  const b = db.prepare('DELETE FROM baselines').run().changes
+  const doReset = db.transaction(() => ({
+    d: db.prepare('DELETE FROM decisions').run().changes,
+    s: db.prepare('DELETE FROM sessions').run().changes,
+    q: db.prepare('DELETE FROM deferred').run().changes,
+    b: db.prepare('DELETE FROM baselines').run().changes,
+  }))
+  const { d, s, q, b } = doReset()
   console.log(`\nReset complete:`)
   console.log(`  decisions:  ${d} rows deleted`)
   console.log(`  sessions:   ${s} rows deleted`)
