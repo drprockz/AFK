@@ -81,3 +81,13 @@ export function listRules(project) {
   }
   return db.prepare('SELECT * FROM rules ORDER BY priority DESC').all()
 }
+
+/**
+ * Fetches a single rule by id.
+ * @param {string} id — uuid
+ * @returns {object|null} rule row or null if not found
+ */
+export function getRule(id) {
+  const db = getDb()
+  return db.prepare('SELECT * FROM rules WHERE id = ?').get(id) ?? null
+}

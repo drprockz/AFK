@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 process.env.AFK_DB_DIR = join(tmpdir(), 'afk-rules-test-' + Date.now())
 
-const { matchRule, addRule } = await import('../src/engine/rules.js')
+const { matchRule, addRule, getRule } = await import('../src/engine/rules.js')
 
 test('matchRule returns null when no rules exist', () => {
   const result = matchRule({ tool: 'Bash', input: { command: 'npm test' }, cwd: '/app' })
@@ -45,4 +45,18 @@ test('matchRule ignores deny rule for non-matching command', () => {
   const result = matchRule({ tool: 'Bash', input: { command: 'echo hello' }, cwd: '/app' })
   // no rule matches 'echo hello'
   assert.ok(result === null || result.action)
+})
+
+test('getRule returns rule by id', () => {
+  const id = addRule({ tool: 'Bash', pattern: 'npm *', action: 'allow', label: 'npm' })
+  const rule = getRule(id)
+  assert.ok(rule !== null, 'rule found')
+  assert.strictEqual(rule.id, id)
+  assert.strictEqual(rule.tool, 'Bash')
+  assert.strictEqual(rule.pattern, 'npm *')
+})
+
+test('getRule returns null for unknown id', () => {
+  const rule = getRule('00000000-0000-0000-0000-000000000000')
+  assert.strictEqual(rule, null)
 })

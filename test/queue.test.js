@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 process.env.AFK_DB_DIR = join(tmpdir(), 'afk-queue-test-' + Date.now())
 
-const { enqueueDeferred, getPendingItems, resolveItem, getPendingCount } =
+const { enqueueDeferred, getPendingItems, resolveItem, getPendingCount, getItemById } =
   await import('../src/store/queue.js')
 
 // A minimal logDecision call to get a valid decisions.id for FK constraint
@@ -58,4 +58,26 @@ test('resolveItem marks row reviewed and returns true', () => {
 test('resolveItem with non-existent id returns false (silent no-op)', () => {
   const updated = resolveItem(999999, 'allow')
   assert.strictEqual(updated, false, 'should return false for missing id')
+})
+
+test('getItemById returns row by id', () => {
+  const decisionsId = makeDecisionsId()
+  const id = enqueueDeferred({
+    decisionsId,
+    sessionId: 'test-session',
+    tool: 'Write',
+    input: { file_path: '/tmp/foo.js' },
+    command: null,
+    path: '/tmp/foo.js'
+  })
+  const row = getItemById(id)
+  assert.ok(row !== null, 'row found')
+  assert.strictEqual(row.id, id)
+  assert.strictEqual(row.tool, 'Write')
+  assert.strictEqual(row.path, '/tmp/foo.js')
+})
+
+test('getItemById returns null for unknown id', () => {
+  const row = getItemById(999999)
+  assert.strictEqual(row, null)
 })

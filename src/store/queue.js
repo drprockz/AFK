@@ -59,3 +59,13 @@ export function getPendingCount() {
   const db = getDb()
   return db.prepare(`SELECT COUNT(*) as c FROM deferred WHERE reviewed = 0`).get().c
 }
+
+/**
+ * Fetches a single deferred row by id.
+ * @param {number} id
+ * @returns {object|null} deferred row or null if not found
+ */
+export function getItemById(id) {
+  const db = getDb()
+  return db.prepare('SELECT * FROM deferred WHERE id = ?').get(id) ?? null
+}
