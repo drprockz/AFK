@@ -1,13 +1,23 @@
 {
-  "name": "drprockz/afk-marketplace",
-  "description": "drprockz plugin marketplace — AFK and future tools",
+  "name": "drprockz-afk-marketplace",
+  "owner": {
+    "name": "drprockz",
+    "email": "drprockz@users.noreply.github.com"
+  },
+  "metadata": {
+    "description": "drprockz plugin marketplace — AFK and future tools",
+    "version": "1.0.0"
+  },
   "plugins": [
     {
       "name": "afk",
       "description": "Intelligent permission layer for Claude Code. AFK mode, behavior prediction, destructive action deferral.",
       "version": "0.1.0",
-      "source": "https://github.com/drprockz/AFK",
-      "categories": ["safety", "productivity", "automation"]
+      "source": {
+        "source": "url",
+        "url": "https://github.com/drprockz/AFK.git"
+      },
+      "category": "safety"
     }
   ]
 }
