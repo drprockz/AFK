@@ -96,19 +96,21 @@ Headers:
   Title: AFK – ${tool} request
   Priority: high
   Tags: robot
-  Actions: http, Approve, ${responseUrl}?decision=allow&id=${requestId}; http, Deny, ${responseUrl}?decision=deny&id=${requestId}
+  Actions: http, Approve, ${responseTopic}, method=POST, body=allow:${requestId}; http, Deny, ${responseTopic}, method=POST, body=deny:${requestId}
 Body: ${command ?? path ?? tool}
 ```
 
-`responseUrl` = `${notifyConfig.ntfyServer}/${notifyConfig.ntfyTopic}-response`
+`responseTopic` = `${notifyConfig.ntfyServer}/${notifyConfig.ntfyTopic}-response`
+
+When the user taps Approve or Deny in the ntfy app, the ntfy client makes an outbound HTTP POST to `responseTopic` with body `allow:<requestId>` or `deny:<requestId>`. This publishes a new message to the response topic, which the hook reads via SSE below.
 
 ### Wait for SSE response
 
-Subscribe to `${notifyConfig.ntfyServer}/${notifyConfig.ntfyTopic}-response?poll=1&since=<ts_before_send>`:
+Subscribe to `${notifyConfig.ntfyServer}/${notifyConfig.ntfyTopic}-response/sse?since=<ts_before_send>`:
 
-- `ts_before_send` = Unix seconds timestamp captured immediately before the POST
-- Parse SSE events; look for a message where `id` query param matches `requestId`
-- Extract `decision` query param from the action URL → `"allow"` or `"deny"`
+- `ts_before_send` = Unix seconds timestamp (in seconds, not ms) captured immediately before the POST
+- Parse each SSE `data` line as JSON; check `parsed.message` starts with `allow:<requestId>` or `deny:<requestId>`
+- Extract the decision from the `message` prefix → `"allow"` or `"deny"`
 - Race against a `setTimeout(waitMs)` — on timeout, abort the SSE fetch and return `"timeout"`
 - On any fetch error → return `"timeout"`
 
@@ -146,13 +148,15 @@ POST to `https://api.telegram.org/bot${notifyConfig.telegramToken}/sendMessage`:
 
 ### Get baseline update offset
 
-Before sending the message, fetch `getUpdates?limit=1&offset=-1` to get the current highest `update_id`. All subsequent polling starts at `offset = last_update_id + 1` to ignore stale callbacks.
+Before sending the message, fetch `getUpdates?limit=100` (no offset filter) to get all pending updates. Take the highest `update_id` seen, or 0 if none. All subsequent polling starts at `offset = highest_update_id + 1` to ignore stale callbacks.
+
+Note: the common `offset=-1` trick is undocumented in the official Telegram Bot API and should not be used. Fetching pending updates and taking the max is the safe approach.
 
 ### Poll for callback
 
 Loop: GET `getUpdates?offset=<next_offset>&timeout=<pollSeconds>&allowed_updates=["callback_query"]`
 
-- `pollSeconds` = `Math.min(30, Math.floor(remainingMs / 1000) - 1)` — long-polling, capped at 30s per request
+- `pollSeconds` = `Math.max(1, Math.min(30, Math.floor(remainingMs / 1000) - 1))` — long-polling, capped at 30s per request, minimum 1s to avoid API errors
 - On each response: check `result` array for a `callback_query` where `callback_data` starts with `allow:<requestId>` or `deny:<requestId>`
 - On match:
   - Call `answerCallbackQuery` (best-effort, fire-and-forget, non-fatal)
@@ -185,7 +189,7 @@ if provider is null/undefined/falsy → return "skip"
 
 waitMs = Math.min(
   (config.notifications.timeout ?? 120) * 1000,
-  deadline - Date.now() - 1000   // always leave 1s buffer
+  deadline - Date.now() - 2000   // always leave 2s buffer for chain teardown
 )
 if waitMs <= 0 → return "timeout"
 
@@ -203,7 +207,10 @@ else → return "skip"   (unknown provider)
 ```js
 import { notify } from '../notify/notify.js'
 import { loadConfig } from '../notify/config.js'
+import { randomUUID } from 'node:crypto'
 ```
+
+Note: `deadline` is already in scope — it is a parameter of `export async function chain(request, deadline)` and is used throughout the existing chain for the destructive classifier snapshot timeout check.
 
 ### Replace Step 7 AFK auto-allow
 
@@ -219,9 +226,11 @@ if (afkOn) {
 Replace with:
 ```js
 if (afkOn) {
-  const notifyResult = await notify(loadConfig(), { tool, command, path, requestId: session_id }, deadline)
+  const requestId = randomUUID()
+  const notifyResult = await notify(loadConfig(), { tool, command, path, requestId }, deadline)
   if (notifyResult === 'deny') {
     log('deny', 'notification', { reason: 'User denied via notification' })
+    appendDigest({ tool, command, path, decision: 'deny', ts: Date.now() })
     return { behavior: 'deny', reason: 'Denied via push notification' }
   }
   // allow, skip, or timeout → fall through to auto-approve
@@ -258,8 +267,8 @@ All tests mock `globalThis.fetch` at the top of the file. Each test restores the
 
 | # | Test | Setup | Expected |
 |---|------|-------|----------|
-| 1 | approve response | POST mock succeeds; SSE mock returns event with `decision=allow&id=<requestId>` | returns `"allow"` |
-| 2 | deny response | SSE mock returns `decision=deny&id=<requestId>` | returns `"deny"` |
+| 1 | approve response | POST mock succeeds; SSE mock returns JSON event with `message` field = `"allow:<requestId>"` | returns `"allow"` |
+| 2 | deny response | SSE mock returns JSON event with `message` field = `"deny:<requestId>"` | returns `"deny"` |
 | 3 | SSE timeout | SSE mock hangs (never resolves) | returns `"timeout"` within `waitMs` |
 | 4 | POST throws | fetch mock throws on first call | returns `"timeout"`, no throw |
 | 5 | SSE fetch throws | POST succeeds; SSE fetch throws | returns `"timeout"`, no throw |
