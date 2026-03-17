@@ -83,7 +83,7 @@ Phase 6 adds three new exported functions to `src/store/history.js` and one new 
 ### `listDecisions({ page, limit, tool, source, decision, date })`
 Paginated query of the decisions table.
 - `page`: integer, default 1
-- `limit`: integer, default 50, max 200
+- `limit`: integer, default 50, max 10,000 (higher limit supports export use case)
 - `tool`: optional string filter (exact match)
 - `source`: optional string filter (exact match)
 - `decision`: optional string filter (exact match — `allow`, `deny`, `defer`, `ask`)
@@ -98,6 +98,12 @@ Aggregated stats over the last 90 days.
 - `top_patterns`: `SELECT tool, COALESCE(command, path, tool) as pattern, COUNT(*) as total, ROUND(AVG(decision='allow'), 2) as allow_rate FROM decisions WHERE ts >= ? GROUP BY tool, pattern ORDER BY total DESC LIMIT 20`
 - `by_source`: `SELECT source, COUNT(*) as count FROM decisions WHERE ts >= ? GROUP BY source` — pivot the result rows into a flat object: `Object.fromEntries(rows.map(r => [r.source, r.count]))`, e.g. `{ user: N, rule: N, prediction: N, auto_afk: N }`
 - Uses raw SQL via `getDb()` directly within `history.js`
+
+### `getItemById(id)` — added to `src/store/queue.js`
+Fetches a single deferred row by id.
+- `id`: integer
+- Returns the full row object `{ id, ts, session_id, tool, input, command, path, decisions_id, reviewed, final, review_ts }` or `null` if not found
+- Used by `POST /api/queue/:id` to get tool/command/path before resolving, without loading all pending items
 
 ### `getRule(id)` — added to `src/engine/rules.js`
 Reads a single rule by id.
@@ -204,7 +210,7 @@ All unreviewed deferred items. Calls `getPendingItems()`.
 ### `POST /api/queue/:id`
 Review a deferred item. Body: `{ "action": "allow" | "deny" }`.
 1. Returns 400 `{ "error": "invalid action" }` if action is not `allow` or `deny`.
-2. Fetches the deferred row from DB before resolving (needed for tool/command/path in notification).
+2. Fetches the deferred row via `getItemById(Number(id))` from `queue.js`. If null, still proceeds (idempotent).
 3. Calls `resolveItem(id, action)` from `queue.js`. `resolveItem` returns `true` if a row was updated, `false` if id not found. Both cases return 200 — the endpoint is idempotent.
 4. If a notification provider is configured: calls `loadConfig()` from `notify/config.js`, then fires `notify(config, { tool, command, path, requestId: String(id) }, Date.now() + 5000)` using data from the fetched row. The `requestId` is the deferred item id cast to string. This is fire-and-forget — do NOT await it; use `.catch(err => process.stderr.write(...))`. The HTTP response is sent immediately without waiting for notify to settle.
 5. Response is constructed manually from the input data (not re-read from DB): `{ "id": Number(id), "final": action, "review_ts": Date.now() }`. Returns this whether or not `resolveItem` found a row.
@@ -249,7 +255,7 @@ Toggle AFK mode. Body: `{ "on": boolean, "duration"?: number }`.
 Download decisions as CSV or JSON.
 Query param: `format` (`csv` | `json`, default `json`).
 Sets `Content-Disposition: attachment; filename="afk-decisions.<ext>"` header.
-For CSV: header row is `id,ts,tool,command,path,decision,source,confidence`; fetches up to 10,000 rows (hard cap, silently truncated — acceptable for v1, no truncation header needed).
+For CSV: header row is `id,ts,tool,command,path,decision,source,confidence`; calls `listDecisions({ limit: 10000 })` (no other filters). For JSON: calls the same and returns the `items` array directly. Both formats are silently capped at 10,000 rows — acceptable for v1.
 
 ---
 
