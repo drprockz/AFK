@@ -2,8 +2,9 @@
   "name": "afk",
   "version": "0.1.0",
   "description": "Intelligent permission layer for Claude Code. Learns your patterns, handles AFK mode, defers destructive actions, never lets Claude stall.",
-  "author": "Simple Inc",
+  "author": "drprockz",
   "license": "MIT",
+  "homepage": "https://github.com/drprockz/afk",
   "hooks": {
     "PermissionRequest": {
       "command": "node",
