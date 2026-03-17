@@ -6,6 +6,8 @@
     "name": "drprockz",
     "email": "drprockz@users.noreply.github.com"
   },
+  "homepage": "https://github.com/drprockz/AFK",
+  "repository": "https://github.com/drprockz/AFK",
   "license": "MIT",
-  "homepage": "https://github.com/drprockz/AFK"
+  "keywords": ["safety", "permissions", "afk", "automation", "hooks"]
 }

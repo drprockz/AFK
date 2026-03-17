@@ -1,0 +1,7 @@
+# Force LF line endings for shell scripts and hook files
+*.sh text eol=lf
+hooks/* text eol=lf
+*.cmd text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
