@@ -31,6 +31,7 @@ export async function notify(notifyConfig, { tool, command, path, requestId }, w
         Title: `AFK – ${tool} request`,
         Priority: 'high',
         Tags: 'robot',
+        // requestId is a UUID ([0-9a-f-] only) — safe in ntfy Actions header (no semicolons or equals)
         Actions: `http, Approve, ${responseTopic}, method=POST, body=allow:${requestId}; http, Deny, ${responseTopic}, method=POST, body=deny:${requestId}`
       },
       body

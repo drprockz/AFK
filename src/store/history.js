@@ -31,7 +31,7 @@ export function sanitizeInput(tool, input) {
  * @param {string|null} opts.command
  * @param {string|null} opts.path
  * @param {string} opts.decision  — allow | deny | defer | ask
- * @param {string} opts.source    — user | rule | prediction | auto_afk | auto_defer | chain
+ * @param {string} opts.source    — user | rule | prediction | auto_afk | auto_defer | chain | notification
  * @param {number|null} opts.confidence
  * @param {string|null} opts.rule_id
  * @param {string|null} opts.reason
