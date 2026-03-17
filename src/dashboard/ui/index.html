@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AFK Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="sidebar-logo">⚡ AFK</div>
+      <a href="#overview" class="nav-link" data-page="overview">● Overview</a>
+      <a href="#queue"    class="nav-link" data-page="queue">▣ Queue <span class="badge" id="queue-badge"></span></a>
+      <a href="#history"  class="nav-link" data-page="history">≡ History</a>
+      <a href="#patterns" class="nav-link" data-page="patterns">◈ Patterns</a>
+      <a href="#rules"    class="nav-link" data-page="rules">⚙ Rules</a>
+      <a href="#digest"   class="nav-link" data-page="digest">📋 Digest</a>
+    </nav>
+    <main id="content" class="main-content">
+      <p class="loading">Loading...</p>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
