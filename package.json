@@ -1,6 +1,6 @@
 {
   "name": "@drprockz/afk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Intelligent permission layer for Claude Code.",
   "type": "module",
   "main": "src/hook.js",
