@@ -2,14 +2,17 @@ import { test } from 'node:test'
 import assert from 'node:assert'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 
 const dbDir = join(tmpdir(), 'afk-chain-test-' + Date.now())
 const stateDir = join(tmpdir(), 'afk-chain-state-' + Date.now())
+const configDir = join(tmpdir(), 'afk-chain-config-' + Date.now())
 mkdirSync(dbDir, { recursive: true })
 mkdirSync(stateDir, { recursive: true })
+mkdirSync(configDir, { recursive: true })
 process.env.AFK_DB_DIR = dbDir
 process.env.AFK_STATE_DIR = stateDir
+process.env.AFK_CONFIG_DIR = configDir
 
 const { chain } = await import('../src/engine/chain.js')
 const { setAfk } = await import('../src/afk/state.js')
@@ -42,6 +45,9 @@ seedBaseline('Bash', 'npm run')       // used in: high-confidence history → al
 seedBaseline('Bash', 'yarn dev')      // used in: no history (AFK off) → ask
 seedBaseline('Bash', 'yarn typecheck') // used in: no history (AFK on) → allow
 seedBaseline('Bash', 'yarn danger')   // used in: high-deny history → deny
+seedBaseline('Bash', 'notify-chain-test cmd1')  // Phase 5 chain test: skip → allow
+seedBaseline('Bash', 'notify-chain-test cmd2')  // Phase 5 chain test: ntfy allow → allow
+seedBaseline('Bash', 'notify-chain-test cmd3')  // Phase 5 chain test: ntfy deny → deny
 
 test('sensitive path → ask (even in AFK mode)', async () => {
   setAfk(true)
@@ -172,4 +178,100 @@ test('never-seen Bash command + AFK-ON → ask + deferred queue grows', async ()
   const after = getPendingItems().length
   assert.ok(after > before, `deferred queue should have grown (before=${before}, after=${after})`)
   setAfk(false)
+})
+
+test('AFK-ON + no provider (skip) → auto-allow', async () => {
+  // configDir has no config.json → loadConfig returns provider:null → "skip" → allow
+  setAfk(true)
+  const r = await chain(
+    { tool: 'Bash', input: { command: 'notify-chain-test cmd1' }, session_id: 's1', cwd },
+    deadline()
+  )
+  assert.strictEqual(r.behavior, 'allow')
+  setAfk(false)
+})
+
+test('AFK-ON + ntfy returns allow → allow', async () => {
+  setAfk(true)
+  // Write ntfy config to the isolated configDir
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+    notifications: { provider: 'ntfy', ntfyServer: 'https://ntfy.test', ntfyTopic: 'afk', timeout: 10 }
+  }))
+
+  // Mock fetch: capture requestId from POST Actions header, emit allow event in SSE
+  const orig = globalThis.fetch
+  let capturedId = null
+  globalThis.fetch = async (url, opts) => {
+    if (opts?.method === 'POST' && !url.includes('api.telegram.org')) {
+      // Extract requestId from Actions header: "..., body=allow:<id>;..."
+      const actions = opts.headers?.Actions ?? ''
+      const m = actions.match(/body=allow:([^\s;]+)/)
+      capturedId = m?.[1] ?? ''
+      return new Response('', { status: 200 })
+    }
+    // SSE: emit the allow event using the captured requestId
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      start(controller) {
+        if (capturedId) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ message: `allow:${capturedId}` })}\n\n`))
+        }
+        controller.close()
+      }
+    })
+    return new Response(stream, { status: 200 })
+  }
+
+  try {
+    const r = await chain(
+      { tool: 'Bash', input: { command: 'notify-chain-test cmd2' }, session_id: 's1', cwd },
+      deadline()
+    )
+    assert.strictEqual(r.behavior, 'allow')
+  } finally {
+    globalThis.fetch = orig
+    setAfk(false)
+    // Remove config so other tests use provider:null
+    writeFileSync(join(configDir, 'config.json'), JSON.stringify({ notifications: { provider: null } }))
+  }
+})
+
+test('AFK-ON + ntfy returns deny → deny', async () => {
+  setAfk(true)
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({
+    notifications: { provider: 'ntfy', ntfyServer: 'https://ntfy.test', ntfyTopic: 'afk', timeout: 10 }
+  }))
+
+  const orig = globalThis.fetch
+  let capturedId = null
+  globalThis.fetch = async (url, opts) => {
+    if (opts?.method === 'POST' && !url.includes('api.telegram.org')) {
+      const actions = opts.headers?.Actions ?? ''
+      const m = actions.match(/body=allow:([^\s;]+)/)
+      capturedId = m?.[1] ?? ''
+      return new Response('', { status: 200 })
+    }
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      start(controller) {
+        if (capturedId) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ message: `deny:${capturedId}` })}\n\n`))
+        }
+        controller.close()
+      }
+    })
+    return new Response(stream, { status: 200 })
+  }
+
+  try {
+    const r = await chain(
+      { tool: 'Bash', input: { command: 'notify-chain-test cmd3' }, session_id: 's1', cwd },
+      deadline()
+    )
+    assert.strictEqual(r.behavior, 'deny')
+  } finally {
+    globalThis.fetch = orig
+    setAfk(false)
+    writeFileSync(join(configDir, 'config.json'), JSON.stringify({ notifications: { provider: null } }))
+  }
 })

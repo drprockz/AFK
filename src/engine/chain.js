@@ -11,6 +11,9 @@ import { existsSync } from 'node:fs'
 import { checkAndAutoAfk } from '../afk/detector.js'
 import { snapshot } from '../safety/snapshot.js'
 import { enqueueDeferred } from '../store/queue.js'
+import { notify } from '../notify/notify.js'
+import { loadConfig } from '../notify/config.js'
+import { randomUUID } from 'node:crypto'
 
 /**
  * Extracts command and path from a PermissionRequest input.
@@ -173,7 +176,15 @@ export async function chain(request, deadline) {
   // if (remaining <= 2000) return { behavior: 'ask', reason: 'deadline' }
   // const waitMs = Math.min(config.notifications.timeout * 1000, remaining - 2000)
   if (afkOn) {
-    log('allow', 'auto_afk', { reason: 'AFK mode: auto-approved' })
+    const requestId = randomUUID()
+    const notifyResult = await notify(loadConfig(), { tool, command, path, requestId }, deadline)
+    if (notifyResult === 'deny') {
+      log('deny', 'notification', { reason: 'User denied via notification' })
+      appendDigest({ tool, command, path, decision: 'deny', ts: Date.now() })
+      return { behavior: 'deny', reason: 'Denied via push notification' }
+    }
+    // "allow", "skip", or "timeout" → fall through to auto-approve
+    log('allow', 'auto_afk', { reason: `AFK mode: auto-approved (notify=${notifyResult})` })
     appendDigest({ tool, command, path, decision: 'allow', ts: Date.now() })
     return { behavior: 'allow', reason: 'AFK mode: auto-approved' }
   }
