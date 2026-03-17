@@ -5,6 +5,7 @@ import { getPendingItems, getPendingCount, resolveItem, getItemById } from '../s
 import { addRule, removeRule, listRules, getRule } from '../engine/rules.js'
 import { getState, setAfk } from '../afk/state.js'
 import { buildDigest } from '../afk/digest.js'
+import { getSession, listSessions } from '../store/session.js'
 
 const router = express.Router()
 
@@ -129,6 +130,23 @@ router.get('/export', (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="afk-decisions.json"')
     res.json(items)
   }
+})
+
+// ── GET /api/sessions ──────────────────────────────────────────────────────────
+router.get('/sessions', (req, res) => {
+  const { page, limit } = req.query
+  const result = listSessions({
+    page:  page  ? Number(page)  : 1,
+    limit: limit ? Number(limit) : 20
+  })
+  res.json(result)
+})
+
+// ── GET /api/sessions/:id ────────────────────────────────────────────────────────
+router.get('/sessions/:id', (req, res) => {
+  const row = getSession(req.params.id)
+  if (!row) return res.status(404).json({ error: 'session not found' })
+  res.json(row)
 })
 
 export default router
