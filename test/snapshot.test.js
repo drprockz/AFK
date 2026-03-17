@@ -26,6 +26,7 @@ test('returns snapshotted=true with commit hash when repo has changes', async ()
   const result = await snapshot(dir, 'rm -rf dist/')
   assert.strictEqual(result.snapshotted, true)
   assert.ok(typeof result.commit === 'string' && result.commit.length > 0, 'commit hash must be a non-empty string')
+  assert.ok(/^[0-9a-f]{7,}$/.test(result.commit), `commit must be a hex hash, got: "${result.commit}"`)
 })
 
 test('returns snapshotted=false when working tree is clean', async () => {

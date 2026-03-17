@@ -38,7 +38,7 @@ export async function snapshot(cwd, reason) {
     //   root commit:   "[main (root-commit) abc1234] message"
     //   detached HEAD: "[(HEAD detached at abc1234) abc1234ef] message"
     const match = stdout.match(/\[([^\]]+?) ([0-9a-f]{7,})\]/)
-    const commit = match?.[1] ?? null
+    const commit = match?.[2] ?? null
     return { snapshotted: true, commit }
   } catch (err) {
     const output = String(err.stdout ?? '') + String(err.stderr ?? '')
