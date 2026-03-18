@@ -38,10 +38,27 @@ export function classify(tool, input) {
     return { destructive: false, reason: 'safe bash command', severity: null }
   }
 
-  // Write/Edit/MultiEdit: destructive only if file exists
-  // Checking file existence requires I/O — callers pass existsOnDisk flag
-  if ((tool === 'Write' || tool === 'Edit' || tool === 'MultiEdit') && input._existsOnDisk) {
-    return { destructive: true, reason: 'overwriting existing file', severity: 'high' }
+  // Edit/MultiEdit: destructive only if removing a large block of content (>50 lines)
+  if (tool === 'Edit' || tool === 'MultiEdit') {
+    const edits = tool === 'MultiEdit' ? (input.edits ?? []) : [input]
+    for (const edit of edits) {
+      const removed = (edit.old_string ?? '').split('\n').length
+      const added = (edit.new_string ?? '').split('\n').length
+      if (removed > 50 && added < removed * 0.5) {
+        return { destructive: true, reason: `large deletion (${removed} lines removed)`, severity: 'high' }
+      }
+    }
+    return { destructive: false, reason: 'normal file edit', severity: null }
+  }
+
+  // Write: destructive only if writing very little content to an existing file
+  // (likely emptying it). Normal writes — including full file rewrites — are safe.
+  if (tool === 'Write' && input._existsOnDisk) {
+    const lines = (input.content ?? '').split('\n').length
+    if (lines <= 1 && (input.content ?? '').trim().length === 0) {
+      return { destructive: true, reason: 'truncating existing file to empty', severity: 'high' }
+    }
+    return { destructive: false, reason: 'normal file write', severity: null }
   }
 
   return { destructive: false, reason: 'safe operation', severity: null }

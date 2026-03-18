@@ -93,10 +93,10 @@ test('high-confidence history → allow', async () => {
   assert.strictEqual(r.behavior, 'allow')
 })
 
-test('no history (AFK off) → ask', async () => {
+test('no history (AFK off) → allow (safe default)', async () => {
   setAfk(false)
   const r = await chain({ tool: 'Bash', input: { command: 'yarn dev' }, session_id: 's1', cwd }, deadline())
-  assert.strictEqual(r.behavior, 'ask')
+  assert.strictEqual(r.behavior, 'allow')
 })
 
 test('no history (AFK on) → allow', async () => {
