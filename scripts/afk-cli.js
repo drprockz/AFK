@@ -39,9 +39,9 @@ try {
   } else if (subcmd === 'off') {
     if (!isAfk()) {
       process.stdout.write('AFK mode is already off.\n')
-    } else {
-      setAfk(false)
+      process.exit(0)
     }
+    setAfk(false)
     const entries = getAndClearDigest()
     const pendingItems = getPendingItems()
     const pendingCount = pendingItems.length

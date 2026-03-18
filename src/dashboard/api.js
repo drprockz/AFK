@@ -34,8 +34,8 @@ router.get('/decisions', (req, res) => {
   const { page, limit, tool, source, decision, date } = req.query
   try {
     const result = listDecisions({
-      page:     page     ? Number(page)  : 1,
-      limit:    limit    ? Number(limit) : 50,
+      page:     page     ? (Number.isFinite(Number(page))  ? Number(page)  : 1)  : 1,
+      limit:    limit    ? (Number.isFinite(Number(limit)) ? Number(limit) : 50) : 50,
       tool:     tool     || undefined,
       source:   source   || undefined,
       decision: decision || undefined,
@@ -59,6 +59,7 @@ router.post('/queue/:id', async (req, res) => {
     return res.status(400).json({ error: 'invalid action — must be allow or deny' })
   }
   const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' })
   const row = getItemById(id)
   if (!row) return res.status(404).json({ error: 'queue item not found' })
   if (row.reviewed) return res.status(409).json({ error: 'item already reviewed', final: row.final })
@@ -109,7 +110,11 @@ router.get('/digest', (_req, res) => {
 // ── POST /api/afk ─────────────────────────────────────────────────────────────
 router.post('/afk', (req, res) => {
   const { on, duration } = req.body ?? {}
-  setAfk(Boolean(on), duration ?? undefined)
+  const parsedDuration = duration != null ? Number(duration) : undefined
+  if (parsedDuration !== undefined && (!Number.isFinite(parsedDuration) || parsedDuration < 1)) {
+    return res.status(400).json({ error: 'duration must be a positive number (minutes)' })
+  }
+  setAfk(Boolean(on), parsedDuration)
   res.json(getState())
 })
 
@@ -120,10 +125,15 @@ router.get('/export', (req, res) => {
   if (format === 'csv') {
     res.setHeader('Content-Disposition', 'attachment; filename="afk-decisions.csv"')
     res.setHeader('Content-Type', 'text/csv')
+    // RFC 4180 CSV: quote fields that contain commas, newlines, or double-quotes.
+    const csvField = v => {
+      const s = String(v ?? '')
+      return /[,"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
     const header = 'id,ts,tool,command,path,decision,source,confidence,reason'
     const rows = items.map(i =>
       [i.id, i.ts, i.tool, i.command ?? '', i.path ?? '', i.decision, i.source, i.confidence ?? '',
-       (i.reason ?? '').replace(/,/g, ';')].join(',')
+       i.reason ?? ''].map(csvField).join(',')
     )
     res.send([header, ...rows].join('\n'))
   } else {

@@ -46,7 +46,7 @@ export function getPendingItems() {
 export function resolveItem(id, final) {
   const db = getDb()
   const result = db.prepare(`
-    UPDATE deferred SET reviewed = 1, final = ?, review_ts = ? WHERE id = ?
+    UPDATE deferred SET reviewed = 1, final = ?, review_ts = ? WHERE id = ? AND reviewed = 0
   `).run(final, Date.now(), id)
   return result.changes > 0
 }

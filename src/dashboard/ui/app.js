@@ -37,8 +37,12 @@ async function apiFetch(path, opts = {}) {
     }
     return res.json()
   } catch (e) {
-    document.getElementById('content').innerHTML =
-      `<p class="error-msg">Error: ${e.message}</p>`
+    // Only replace page content for top-level fetches — never for background refreshes
+    // (background refreshes use a dedicated #digest-content or #queue-error element)
+    const content = document.getElementById('content')
+    if (content && !_refreshInterval) {
+      content.innerHTML = `<p class="error-msg">Error: ${e.message}</p>`
+    }
     throw e
   }
 }
@@ -86,10 +90,11 @@ function esc(s) {
 // ── Overview ──────────────────────────────────────────────────────────────────
 async function renderOverview() {
   clearInterval(_refreshInterval)
+  // Fetch independently so one failure doesn't block the other from rendering
   const [status, recent] = await Promise.all([
-    apiFetch('/status'),
-    apiFetch('/decisions?limit=10')
-  ]).catch(() => [null, null])
+    apiFetch('/status').catch(() => null),
+    apiFetch('/decisions?limit=10').catch(() => null)
+  ])
   if (!status) return
 
   updateQueueBadge(status.queue_count)
@@ -236,6 +241,9 @@ async function approveAll() {
   }
   document.getElementById('queue-list').innerHTML = '<p class="muted">No pending items.</p>'
   updateQueueBadge(0)
+  // Re-enable the Approve All button so the user can navigate back and use it again
+  const approveAllBtn = document.querySelector('button[onclick="approveAll()"]')
+  if (approveAllBtn) approveAllBtn.disabled = false
 }
 
 // ── History ───────────────────────────────────────────────────────────────────
@@ -452,12 +460,13 @@ async function saveRule() {
   const errEl    = document.getElementById('rule-error')
   errEl.style.display = 'none'
   if (!pattern) { errEl.textContent = 'Pattern is required.'; errEl.style.display = 'block'; return }
+  let saveOk = true
   await apiFetch('/rules', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ tool, pattern, action, label, project, priority })
-  }).catch(e => { errEl.textContent = e.message; errEl.style.display = 'block' })
-  renderRules()
+  }).catch(e => { errEl.textContent = e.message; errEl.style.display = 'block'; saveOk = false })
+  if (saveOk) renderRules()
 }
 
 async function deleteRule(id) {
