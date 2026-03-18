@@ -49,6 +49,7 @@ export function estimateTokens(tool, input) {
  */
 function resolveCounter(decision, source) {
   if (source === 'auto_afk') return 'auto_allow'
+  if (source === 'auto_allow') return 'auto_allow'
   if (source === 'auto_defer' && decision === 'defer') return 'deferred'
   if (source === 'notification' && decision === 'deny') return 'auto_deny'
   if (source === 'user' && decision === 'allow') return 'user_allow'

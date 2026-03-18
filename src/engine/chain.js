@@ -58,7 +58,13 @@ export async function chain(request, deadline) {
   const sensitive = isSensitive(tool, input)
   if (sensitive.sensitive) {
     log('ask', 'chain', { reason: `Sensitive path: ${sensitive.matched}` })
-    // Phase 3: in AFK mode, also fire-and-forget an urgent notification here
+    // In AFK mode: fire-and-forget an urgent notification so the user knows Claude stalled.
+    // We do NOT wait for a response — sensitive paths always require the user's own decision.
+    if (afkOn) {
+      const requestId = randomUUID()
+      notify(loadConfig(), { tool, command, path, requestId }, deadline).catch(() => { /* non-fatal */ })
+      try { appendDigest({ tool, command, path, decision: 'ask', ts: Date.now() }) } catch { /* non-fatal */ }
+    }
     return { behavior: 'ask', decision: 'ask', source: 'chain', reason: `Sensitive path detected: ${sensitive.matched}` }
   }
 

@@ -37,11 +37,16 @@ process.stdin.on('end', async () => {
     process.exit(0)
   }
 
-  // Auto-allow AFK's own CLI commands — no permission prompt needed
+  // Auto-allow AFK's own CLI commands — no permission prompt needed.
+  // Must be a strict prefix match: the command is EXACTLY "node <pluginRoot>/(hooks|scripts)/<filename>"
+  // with no prefix pipeline or shell operators that could smuggle destructive commands past the check.
   if (request.tool === 'Bash' && request.input?.command) {
     const pluginRoot = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-    const cmd = request.input.command
-    if (cmd.includes(pluginRoot + '/hooks/') || cmd.includes(pluginRoot + '/scripts/')) {
+    const cmd = request.input.command.trim()
+    // Escape the path for use in a regex (handles spaces and special chars in home dirs)
+    const escapedRoot = pluginRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const selfPattern = new RegExp(`^node\\s+${escapedRoot}/(hooks|scripts)/[^/\\s]+(\\.js)?(?:\\s+\\S*)*$`)
+    if (selfPattern.test(cmd)) {
       process.stdout.write(hookResponse('allow'))
       process.exit(0)
     }
@@ -55,8 +60,12 @@ process.stdin.on('end', async () => {
         setTimeout(() => resolve({ behavior: 'ask', reason: 'timeout' }), HARD_DEADLINE_MS)
       )
     ])
-    // Post-chain side effect: update anomaly baseline unconditionally
-    try { updateBaseline(request) } catch { /* non-fatal */ }
+    // Post-chain side effect: update anomaly baseline only for approved requests.
+    // Denied/deferred patterns should NOT inflate baseline counts — a consistently-denied
+    // command must not escape anomaly detection by appearing "familiar".
+    if (result.decision === 'allow') {
+      try { updateBaseline(request) } catch { /* non-fatal */ }
+    }
     try {
       ensureSession(request.session_id, request.cwd)
       updateSessionStats(request.session_id, result.decision ?? result.behavior ?? 'ask', result.source ?? 'chain')

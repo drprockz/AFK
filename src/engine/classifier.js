@@ -6,9 +6,9 @@ const DESTRUCTIVE_BASH = [
   { pattern: /\brmdir\b/i, severity: 'high', reason: 'directory deletion' },
   { pattern: /\bshred\b/i, severity: 'critical', reason: 'secure file deletion' },
   { pattern: /\btruncate\b\s+-s\s*0/i, severity: 'high', reason: 'file truncation to zero' },
-  // Shell redirect overwrite: single > not followed by > (not >>)
-  // Match "> <non-whitespace>" that isn't redirecting to /dev/null
-  { pattern: /(?<![>])[>](?![>])\s*(?!\/dev\/null)\S/, severity: 'high', reason: 'shell redirect overwriting file' },
+  // Shell redirect overwrite: requires whitespace before > to avoid false-positives on
+  // comparison operators like 1>0, x>y or HTML in strings. Excludes >>, >=, >&(fd dup).
+  { pattern: /(?<=\s)(?:\d+)?(?<![>])>(?![>=&])\s*(?!\/dev\/null)\S/, severity: 'high', reason: 'shell redirect overwriting file' },
   { pattern: /DROP\s+(TABLE|DATABASE|SCHEMA)/i, severity: 'critical', reason: 'SQL schema destruction' },
   { pattern: /TRUNCATE\s+TABLE/i, severity: 'high', reason: 'SQL data truncation' },
   { pattern: /\b(kill|killall|pkill|pkexec)\b/i, severity: 'high', reason: 'process termination' },

@@ -10,11 +10,19 @@ const VALID_ACTIONS = new Set(['allow', 'deny'])
  * @param {string} pattern
  * @returns {RegExp}
  */
-function patternToRegex(pattern) {
+/**
+ * Converts a glob pattern (supporting * and ?) to a RegExp.
+ * @param {string} pattern
+ * @param {boolean} [anchorStart=false] — when true, anchors to ^ so "npm *" matches
+ *   "npm run build" but NOT "xnpm run build". Use for command (Bash) patterns.
+ *   For file path patterns, leave false so "secret" matches "/app/secret.json".
+ * @returns {RegExp}
+ */
+function patternToRegex(pattern, anchorStart = false) {
   // Escape regex metacharacters except * and ?
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
   // Convert glob wildcards: * → .*, ? → .
-  const regexStr = escaped.replace(/\*/g, '.*').replace(/\?/g, '.')
+  const regexStr = (anchorStart ? '^' : '') + escaped.replace(/\*/g, '.*').replace(/\?/g, '.')
   return new RegExp(regexStr, 'i')
 }
 
@@ -51,7 +59,9 @@ export function matchRule({ tool, input, cwd }) {
   `).all(tool, cwd)
 
   for (const row of rows) {
-    const re = patternToRegex(row.pattern)
+    // Anchor command rules so "npm *" matches "npm run build" but not "xnpm run build".
+    // Path rules remain substring-matched so "secret" matches "/app/secret.json".
+    const re = patternToRegex(row.pattern, row.tool === 'Bash')
     if (re.test(target)) {
       return row
     }

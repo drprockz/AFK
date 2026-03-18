@@ -86,6 +86,22 @@ test('redirect to /dev/null is safe', () => {
   assert.strictEqual(classify('Bash', { command: 'cmd 2> /dev/null' }).destructive, false)
 })
 
+test('comparison operator in node -e is not a redirect', () => {
+  assert.strictEqual(classify('Bash', { command: 'node -e "console.log(1>0)"' }).destructive, false)
+})
+
+test('comparison in grep pattern is not a redirect', () => {
+  assert.strictEqual(classify('Bash', { command: 'grep "x>y" file.txt' }).destructive, false)
+})
+
+test('fd duplication >&2 is not a redirect overwrite', () => {
+  assert.strictEqual(classify('Bash', { command: 'cmd >&2' }).destructive, false)
+})
+
+test('>= comparison operator is not a redirect', () => {
+  assert.strictEqual(classify('Bash', { command: 'python -c "print(a>=b)"' }).destructive, false)
+})
+
 test('chmod 000 is destructive', () => {
   assert.strictEqual(classify('Bash', { command: 'chmod 000 secrets.pem' }).destructive, true)
 })
