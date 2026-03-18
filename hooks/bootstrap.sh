@@ -4,8 +4,8 @@
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 if [ ! -d "$PLUGIN_ROOT/node_modules/better-sqlite3" ]; then
-  npm install --prefix "$PLUGIN_ROOT" --production 2>/dev/null
-  node "$PLUGIN_ROOT/scripts/setup.js" 2>/dev/null
+  npm install --prefix "$PLUGIN_ROOT" --production >/dev/null 2>&1 || true
+  node "$PLUGIN_ROOT/scripts/setup.js" >/dev/null 2>&1 || true
 fi
 
-node "$PLUGIN_ROOT/src/hook.js"
+exec node "$PLUGIN_ROOT/src/hook.js"

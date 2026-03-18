@@ -64,7 +64,7 @@ export async function chain(request, deadline) {
 
   // ── Step 2: Prompt injection ──────────────────────────────────────────────
   // source='chain': hard safety gate, immediate deny.
-  const injection = hasInjection(input)
+  const injection = hasInjection(input, tool)
   if (injection.injected) {
     log('deny', 'chain', { reason: injection.reason })
     return { behavior: 'deny', decision: 'deny', source: 'chain', reason: injection.reason }
@@ -80,7 +80,8 @@ export async function chain(request, deadline) {
     // Before deferring/interrupting: check if a static deny rule applies.
     // A deny rule is more specific/intentional than the generic "ask" that the
     // destructive classifier would produce — honour it for a cleaner signal.
-    const denyRule = matchRule({ tool, input, cwd })
+    let denyRule = null
+    try { denyRule = matchRule({ tool, input, cwd }) } catch { /* non-fatal — treat as no rule */ }
     if (denyRule && denyRule.action === 'deny') {
       log('deny', 'rule', { rule_id: denyRule.id, reason: `Rule (destructive override): ${denyRule.label ?? denyRule.pattern}` })
       return { behavior: 'deny', decision: 'deny', source: 'rule', reason: `Matched deny rule: ${denyRule.label ?? denyRule.pattern}` }
@@ -121,7 +122,8 @@ export async function chain(request, deadline) {
   }
 
   // ── Step 4: Static rules ──────────────────────────────────────────────────
-  const rule = matchRule({ tool, input, cwd })
+  let rule = null
+  try { rule = matchRule({ tool, input, cwd }) } catch { /* non-fatal — treat as no rule */ }
   if (rule) {
     const behavior = rule.action === 'allow' ? 'allow' : 'deny'
     log(behavior, 'rule', { rule_id: rule.id, reason: `Rule: ${rule.label ?? rule.pattern}` })

@@ -24,7 +24,7 @@ export function getDb() {
 }
 
 function migrate(db) {
-  db.exec(`
+  const SQL = `
     CREATE TABLE IF NOT EXISTS decisions (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       ts          INTEGER NOT NULL,
@@ -94,5 +94,6 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_decisions_ts      ON decisions(ts);
     CREATE INDEX IF NOT EXISTS idx_deferred_reviewed ON deferred(reviewed);
     CREATE INDEX IF NOT EXISTS idx_decisions_project ON decisions(project_cwd, tool);
-  `)
+  `
+  db.transaction(() => db.exec(SQL))()
 }

@@ -10,7 +10,7 @@ function normalizePattern(tool, input) {
   if (tool === 'Bash') {
     const cmd = input.command ?? ''
     // Strip arguments after first two tokens: "npm run test --watch" → "npm run"
-    return cmd.split(' ').slice(0, 2).join(' ')
+    return cmd.split(/\s+/).filter(Boolean).slice(0, 2).join(' ')
   }
   // Write/Read/Edit: strip filename, keep directory
   const path = input.file_path ?? input.path ?? ''
@@ -47,6 +47,9 @@ export function predict({ tool, input, cwd }) {
   let totalWeight = 0
 
   for (const row of rows) {
+    // Skip 'ask' rows — they represent user interruptions, not explicit decisions,
+    // and would silently bias confidence toward deny.
+    if (row.decision === 'ask') continue
     const daysOld = (now - row.ts) / MS_PER_DAY
     const weight = Math.exp(-daysOld / 30)  // half-life ~30 days
     totalWeight += weight
@@ -57,7 +60,7 @@ export function predict({ tool, input, cwd }) {
   const predicted = confidence >= 0.5 ? 'allow' : 'deny'
 
   const approvals = rows.filter(r => r.decision === 'allow').length
-  const recentDays = Math.round((now - Math.min(...rows.map(r => r.ts))) / MS_PER_DAY)
+  const recentDays = Math.round((now - Math.max(...rows.map(r => r.ts))) / MS_PER_DAY)
 
   return {
     confidence,

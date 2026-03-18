@@ -1,6 +1,23 @@
 import { getDb } from '../store/db.js'
 import { randomUUID } from 'node:crypto'
 
+const VALID_TOOLS = new Set(['Bash', 'Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'LS', '*'])
+const VALID_ACTIONS = new Set(['allow', 'deny'])
+
+/**
+ * Converts a glob pattern (supporting * and ?) to a RegExp.
+ * Falls back to substring match if the pattern contains no wildcards.
+ * @param {string} pattern
+ * @returns {RegExp}
+ */
+function patternToRegex(pattern) {
+  // Escape regex metacharacters except * and ?
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  // Convert glob wildcards: * → .*, ? → .
+  const regexStr = escaped.replace(/\*/g, '.*').replace(/\?/g, '.')
+  return new RegExp(regexStr, 'i')
+}
+
 /**
  * Extracts the matchable string from a request's input based on tool type.
  * @param {string} tool
@@ -15,6 +32,7 @@ function extractTarget(tool, input) {
 /**
  * Finds the highest-priority static rule matching this request.
  * Rules are evaluated in priority DESC order. First match wins.
+ * Pattern matching: glob wildcards (* and ?) supported; falls back to substring match.
  * @param {object} opts
  * @param {string} opts.tool
  * @param {object} opts.input
@@ -33,7 +51,8 @@ export function matchRule({ tool, input, cwd }) {
   `).all(tool, cwd)
 
   for (const row of rows) {
-    if (target.includes(row.pattern)) {
+    const re = patternToRegex(row.pattern)
+    if (re.test(target)) {
       return row
     }
   }
@@ -43,8 +62,8 @@ export function matchRule({ tool, input, cwd }) {
 /**
  * Adds a new static rule to the database.
  * @param {object} opts
- * @param {string} opts.tool
- * @param {string} opts.pattern
+ * @param {string} opts.tool  — Bash | Read | Write | Edit | MultiEdit | Glob | Grep | LS | *
+ * @param {string} opts.pattern  — glob or literal substring
  * @param {string} opts.action  — allow | deny
  * @param {string} [opts.label]
  * @param {string} [opts.project]  — null = global
@@ -52,18 +71,26 @@ export function matchRule({ tool, input, cwd }) {
  * @returns {string} new rule id
  */
 export function addRule({ tool, pattern, action, label, project, priority = 0 }) {
+  const normalizedAction = (action ?? '').toLowerCase()
+  if (!VALID_ACTIONS.has(normalizedAction)) {
+    throw new Error(`Invalid action "${action}": must be "allow" or "deny"`)
+  }
+  if (!VALID_TOOLS.has(tool)) {
+    throw new Error(`Invalid tool "${tool}": must be one of ${[...VALID_TOOLS].join(', ')}`)
+  }
   const db = getDb()
   const id = randomUUID()
   db.prepare(`
     INSERT INTO rules (id, created_ts, tool, pattern, action, label, project, priority)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, Date.now(), tool, pattern, action, label ?? null, project ?? null, priority)
+  `).run(id, Date.now(), tool, pattern, normalizedAction, label ?? null, project ?? null, priority)
   return id
 }
 
 /**
  * Removes a rule by ID.
- * @param {string} id
+ * @param {string} id — full UUID
+ * @returns {number} 1 if deleted, 0 if not found
  */
 export function removeRule(id) {
   return getDb().prepare('DELETE FROM rules WHERE id = ?').run(id).changes

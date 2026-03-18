@@ -5,24 +5,23 @@ import { listRules, addRule, removeRule } from '../src/engine/rules.js'
 const [,, subcmd, ...rest] = process.argv
 
 if (!subcmd) {
-  // list all rules
+  // list all rules — show full IDs so users can copy-paste for `remove`
   const rules = listRules(null)
-  if (rules.length === 0) { console.log('No rules defined.'); process.exit(0) }
-  console.log('\nRules:')
-  console.log('  ' + ['ID', 'Tool', 'Pattern', 'Action', 'Priority', 'Label'].join('\t'))
+  if (rules.length === 0) { process.stdout.write('No rules defined.\n'); process.exit(0) }
+  process.stdout.write('\nRules:\n')
+  process.stdout.write('  ' + ['ID (full)', 'Tool', 'Pattern', 'Action', 'Priority', 'Label'].join('\t') + '\n')
   rules.forEach(r => {
-    console.log(`  ${r.id.slice(0,8)}\t${r.tool}\t${r.pattern}\t${r.action}\t${r.priority}\t${r.label || ''}`)
+    process.stdout.write(`  ${r.id}\t${r.tool}\t${r.pattern}\t${r.action}\t${r.priority}\t${r.label || ''}\n`)
   })
-  console.log()
+  process.stdout.write('\n')
 
 } else if (subcmd === 'project') {
   const rules = listRules(process.cwd())
-  if (rules.length === 0) { console.log('No rules scoped to this project.'); process.exit(0) }
-  rules.forEach(r => console.log(`  ${r.id.slice(0,8)} | ${r.tool} | ${r.pattern} | ${r.action}`))
+  if (rules.length === 0) { process.stdout.write('No rules scoped to this project.\n'); process.exit(0) }
+  rules.forEach(r => process.stdout.write(`  ${r.id} | ${r.tool} | ${r.pattern} | ${r.action}\n`))
 
 } else if (subcmd === 'add') {
-  // parse key=value args — iterate rest directly to preserve values with spaces
-  // e.g. pattern="npm run *" arrives as one argv item after shell unquoting: "pattern=npm run *"
+  // parse key=value args
   const kv = {}
   rest.forEach(arg => {
     const eqIdx = arg.indexOf('=')
@@ -30,30 +29,40 @@ if (!subcmd) {
     kv[arg.slice(0, eqIdx)] = arg.slice(eqIdx + 1)
   })
   if (!kv.tool || !kv.pattern || !kv.action) {
-    console.error('Usage: afk:rules add tool=<t> pattern=<p> action=allow|deny [label=<l>] [priority=<n>]')
+    process.stderr.write('Usage: afk:rules add tool=<t> pattern=<p> action=allow|deny [label=<l>] [priority=<n>]\n')
     process.exit(1)
   }
-  if (kv.action !== 'allow' && kv.action !== 'deny') {
-    console.error('action must be allow or deny')
+  // Validate priority is a valid integer
+  let priority = 0
+  if (kv.priority !== undefined) {
+    priority = parseInt(kv.priority, 10)
+    if (isNaN(priority)) {
+      process.stderr.write(`priority must be an integer, got: ${kv.priority}\n`)
+      process.exit(1)
+    }
+  }
+  try {
+    const id = addRule({
+      tool:     kv.tool,
+      pattern:  kv.pattern,
+      action:   kv.action,
+      label:    kv.label     || undefined,
+      priority
+    })
+    process.stdout.write(`Created rule ${id}\n`)
+  } catch (err) {
+    process.stderr.write(`Error: ${err.message}\n`)
     process.exit(1)
   }
-  const id = addRule({
-    tool:     kv.tool,
-    pattern:  kv.pattern,
-    action:   kv.action,
-    label:    kv.label     || undefined,
-    priority: kv.priority  ? Number(kv.priority) : 0
-  })
-  console.log(`Created rule ${id}`)
 
 } else if (subcmd === 'remove') {
   const id = rest[0]
-  if (!id) { console.error('Usage: afk:rules remove <id>'); process.exit(1) }
+  if (!id) { process.stderr.write('Usage: afk:rules remove <full-uuid>\n'); process.exit(1) }
   const changes = removeRule(id)
-  if (!changes) { console.error(`No rule found with id: ${id}`); process.exit(1) }
-  console.log(`Deleted rule ${id}`)
+  if (!changes) { process.stderr.write(`No rule found with id: ${id}\n`); process.exit(1) }
+  process.stdout.write(`Deleted rule ${id}\n`)
 
 } else {
-  console.error(`Unknown subcommand: ${subcmd}`)
+  process.stderr.write(`Unknown subcommand: ${subcmd}\n`)
   process.exit(1)
 }
