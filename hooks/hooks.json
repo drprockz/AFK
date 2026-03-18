@@ -2,6 +2,7 @@
   "hooks": {
     "PermissionRequest": [
       {
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
