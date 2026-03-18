@@ -1,8 +1,8 @@
 const SAFE_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS'])
 
 const DESTRUCTIVE_BASH = [
-  // Any rm invocation — bare rm deletes files irreversibly even without -rf flags
-  { pattern: /\brm\b/i, severity: 'critical', reason: 'file deletion' },
+  // rm invocation — excludes "git rm --cached" which only removes from index, not disk
+  { pattern: /(?<!git\s)\brm\b(?!\s+--cached)/i, severity: 'critical', reason: 'file deletion' },
   { pattern: /\brmdir\b/i, severity: 'high', reason: 'directory deletion' },
   { pattern: /\bshred\b/i, severity: 'critical', reason: 'secure file deletion' },
   { pattern: /\btruncate\b\s+-s\s*0/i, severity: 'high', reason: 'file truncation to zero' },

@@ -41,7 +41,7 @@ async function apiFetch(path, opts = {}) {
     // (background refreshes use a dedicated #digest-content or #queue-error element)
     const content = document.getElementById('content')
     if (content && !_refreshInterval) {
-      content.innerHTML = `<p class="error-msg">Error: ${e.message}</p>`
+      content.innerHTML = `<p class="error-msg">Error: ${esc(e.message)}</p>`
     }
     throw e
   }

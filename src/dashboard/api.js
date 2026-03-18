@@ -83,7 +83,12 @@ router.post('/rules', (req, res) => {
   if (action !== 'allow' && action !== 'deny') {
     return res.status(400).json({ error: 'action must be allow or deny' })
   }
-  const id = addRule({ tool, pattern, action, label, project, priority })
+  let id
+  try {
+    id = addRule({ tool, pattern, action, label, project, priority })
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
   res.status(201).json(getRule(id))
 })
 
@@ -146,8 +151,8 @@ router.get('/export', (req, res) => {
 router.get('/sessions', (req, res) => {
   const { page, limit } = req.query
   const result = listSessions({
-    page:  page  ? Number(page)  : 1,
-    limit: limit ? Number(limit) : 20
+    page:  page  ? (Number.isFinite(Number(page))  ? Number(page)  : 1)  : 1,
+    limit: limit ? (Number.isFinite(Number(limit)) ? Number(limit) : 20) : 20
   })
   res.json(result)
 })

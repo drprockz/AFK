@@ -62,6 +62,43 @@ test('cat is safe', () => {
   assert.strictEqual(classify('Bash', { command: 'cat README.md' }).destructive, false)
 })
 
+test('shred is destructive critical', () => {
+  const r = classify('Bash', { command: 'shred -u secrets.txt' })
+  assert.strictEqual(r.destructive, true)
+  assert.strictEqual(r.severity, 'critical')
+})
+
+test('dd raw disk write is destructive critical', () => {
+  const r = classify('Bash', { command: 'dd if=/dev/zero of=/dev/sda' })
+  assert.strictEqual(r.destructive, true)
+  assert.strictEqual(r.severity, 'critical')
+})
+
+test('shell redirect overwrite is destructive', () => {
+  assert.strictEqual(classify('Bash', { command: 'echo hello > output.txt' }).destructive, true)
+})
+
+test('shell append redirect >> is safe', () => {
+  assert.strictEqual(classify('Bash', { command: 'echo hello >> output.txt' }).destructive, false)
+})
+
+test('redirect to /dev/null is safe', () => {
+  assert.strictEqual(classify('Bash', { command: 'cmd 2> /dev/null' }).destructive, false)
+})
+
+test('chmod 000 is destructive', () => {
+  assert.strictEqual(classify('Bash', { command: 'chmod 000 secrets.pem' }).destructive, true)
+})
+
+test('git rm --cached is safe (index-only removal)', () => {
+  assert.strictEqual(classify('Bash', { command: 'git rm --cached .env' }).destructive, false)
+})
+
+test('Write to empty string on existing file is destructive', () => {
+  const r = classify('Write', { file_path: '/project/src/main.js', content: '', _existsOnDisk: true })
+  assert.strictEqual(r.destructive, true)
+})
+
 // Read-only tools always safe
 test('Read tool is safe', () => {
   assert.strictEqual(classify('Read', { file_path: '/projects/app/src/index.js' }).destructive, false)

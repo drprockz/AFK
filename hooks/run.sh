@@ -11,7 +11,7 @@ fi
 
 # Validate script name: must be a plain filename (no path separators or dots leading to traversal)
 SCRIPT_NAME="$1"
-if [ -z "$SCRIPT_NAME" ] || echo "$SCRIPT_NAME" | grep -q '[/\\]' || echo "$SCRIPT_NAME" | grep -qP '^\.' ; then
+if [ -z "$SCRIPT_NAME" ] || echo "$SCRIPT_NAME" | grep -q '[/\\]' || case "$SCRIPT_NAME" in .*) true;; *) false;; esac ; then
   echo "afk: invalid script name: $SCRIPT_NAME" >&2
   exit 1
 fi

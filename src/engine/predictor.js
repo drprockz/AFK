@@ -31,12 +31,15 @@ export function predict({ tool, input, cwd }) {
   const pattern = normalizePattern(tool, input)
   const rows = queryByPattern({ tool, pattern, project_cwd: cwd })
 
-  if (rows.length < 3) {
+  // Only count rows with explicit decisions (allow/deny) — 'ask' rows don't represent decisions
+  const effectiveRows = rows.filter(r => r.decision !== 'ask')
+
+  if (effectiveRows.length < 3) {
     return {
       confidence: 0.5,
       predicted: 'allow',
       sample_size: rows.length,
-      explanation: `Insufficient history (${rows.length} samples) — cannot predict`
+      explanation: `Insufficient history (${effectiveRows.length} effective samples) — cannot predict`
     }
   }
 
@@ -46,10 +49,7 @@ export function predict({ tool, input, cwd }) {
   let allowWeight = 0
   let totalWeight = 0
 
-  for (const row of rows) {
-    // Skip 'ask' rows — they represent user interruptions, not explicit decisions,
-    // and would silently bias confidence toward deny.
-    if (row.decision === 'ask') continue
+  for (const row of effectiveRows) {
     const daysOld = (now - row.ts) / MS_PER_DAY
     const weight = Math.exp(-daysOld / 30)  // half-life ~30 days
     totalWeight += weight
@@ -59,13 +59,14 @@ export function predict({ tool, input, cwd }) {
   const confidence = totalWeight > 0 ? allowWeight / totalWeight : 0.5
   const predicted = confidence >= 0.5 ? 'allow' : 'deny'
 
-  const approvals = rows.filter(r => r.decision === 'allow').length
-  const recentDays = Math.round((now - Math.max(...rows.map(r => r.ts))) / MS_PER_DAY)
+  const approvals = effectiveRows.filter(r => r.decision === 'allow').length
+  // Math.min gives oldest timestamp → now - oldest = span of data window = "last X days"
+  const recentDays = Math.round((now - Math.min(...effectiveRows.map(r => r.ts))) / MS_PER_DAY)
 
   return {
     confidence,
     predicted,
     sample_size: rows.length,
-    explanation: `${predicted === 'allow' ? 'Approved' : 'Denied'} ${approvals} of ${rows.length} similar ${tool} requests in the last ${recentDays} days`
+    explanation: `${predicted === 'allow' ? 'Approved' : 'Denied'} ${approvals} of ${effectiveRows.length} similar ${tool} requests in the last ${recentDays} days`
   }
 }
