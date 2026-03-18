@@ -6,7 +6,8 @@
   "main": "src/hook.js",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "setup": "node scripts/setup.js"
+    "setup": "node scripts/setup.js",
+    "postinstall": "node scripts/setup.js"
   },
   "dependencies": {
     "better-sqlite3": "latest",

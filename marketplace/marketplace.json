@@ -15,9 +15,11 @@
       "version": "0.1.1",
       "source": {
         "source": "url",
-        "url": "https://github.com/drprockz/AFK.git"
+        "url": "https://github.com/drprockz/AFK.git",
+        "ref": "main"
       },
-      "category": "safety"
+      "categories": ["safety", "productivity", "automation"],
+      "strict": true
     }
   ]
 }
