@@ -14,10 +14,14 @@ const SENSITIVE_PATTERNS = [
   /\.npmrc/i,
   /\.netrc/i,
   /keystore/i,
-  /vault/i,
-  /api.?key/i,
-  /access.?token/i,
-  /auth.?token/i,
+  // Tightened: require word boundary + secret operation context to avoid matching
+  // "vault" in app names, filenames, or variable names like VaultIcon.tsx
+  /\bvault\b.*(secrets?|login|token|unseal|kv)/i,
+  // Tightened: match only when surrounded by non-alphanumeric chars (word boundaries)
+  // to avoid matching source files like api_key_validator.js or token_refresh.ts
+  /\bapi[_\-.]?key\b/i,
+  /\baccess[_\-.]?token\b/i,
+  /\bauth[_\-.]?token\b/i,
 ]
 
 /**

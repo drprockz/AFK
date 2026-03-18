@@ -1,19 +1,25 @@
-const SAFE_TOOLS = new Set(['Read', 'Glob', 'Grep'])
+const SAFE_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS'])
 
 const DESTRUCTIVE_BASH = [
-  { pattern: /\brm\b.*(-r|-f|-rf|-fr)/i, severity: 'critical', reason: 'recursive/force file deletion' },
+  // Any rm invocation — bare rm deletes files irreversibly even without -rf flags
+  { pattern: /\brm\b/i, severity: 'critical', reason: 'file deletion' },
   { pattern: /\brmdir\b/i, severity: 'high', reason: 'directory deletion' },
   { pattern: /\bshred\b/i, severity: 'critical', reason: 'secure file deletion' },
   { pattern: /\btruncate\b\s+-s\s*0/i, severity: 'high', reason: 'file truncation to zero' },
+  // Shell redirect overwrite: single > not followed by > (not >>)
+  // Match "> <non-whitespace>" that isn't redirecting to /dev/null
+  { pattern: /(?<![>])[>](?![>])\s*(?!\/dev\/null)\S/, severity: 'high', reason: 'shell redirect overwriting file' },
   { pattern: /DROP\s+(TABLE|DATABASE|SCHEMA)/i, severity: 'critical', reason: 'SQL schema destruction' },
   { pattern: /TRUNCATE\s+TABLE/i, severity: 'high', reason: 'SQL data truncation' },
   { pattern: /\b(kill|killall|pkill|pkexec)\b/i, severity: 'high', reason: 'process termination' },
   { pattern: /\bgit\s+reset\s+--hard\b/i, severity: 'high', reason: 'destructive git reset' },
-  { pattern: /\bgit\s+clean\s+-[a-z]*f/i, severity: 'high', reason: 'destructive git clean' },
+  // git clean with -f or --force in any flag combination, case-insensitive
+  { pattern: /\bgit\s+clean\s+.*(-[a-zA-Z]*[fF]|--force)/i, severity: 'high', reason: 'destructive git clean' },
   { pattern: /\bdd\s+if=/i, severity: 'critical', reason: 'raw disk write' },
   { pattern: /curl[^|]*\|\s*(ba)?sh/i, severity: 'high', reason: 'remote code execution' },
   { pattern: /wget[^|]*\|\s*(ba)?sh/i, severity: 'high', reason: 'remote code execution' },
-  { pattern: /\bchmod\s+0*0+\b/i, severity: 'high', reason: 'permission lockout' },
+  // chmod: numeric all-zero OR symbolic total removal OR --recursive
+  { pattern: /\bchmod\b.*(0{3,4}|a[-=]rwx|u[-=]rwx.*g[-=]rwx|--recursive.*[0-7]{3})/i, severity: 'high', reason: 'permission lockout' },
 ]
 
 /**

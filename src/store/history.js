@@ -75,17 +75,20 @@ export function logDecision(opts) {
 export function queryByPattern({ tool, pattern, project_cwd }) {
   const db = getDb()
   const cutoff = Date.now() - NINETY_DAYS_MS
+  // Escape SQL LIKE wildcards in the pattern so user-controlled command strings
+  // (e.g. "% DROP") cannot match unintended rows via wildcard expansion.
+  const safePattern = pattern.replace(/[%_\\]/g, '\\$&')
   return db.prepare(`
     SELECT ts, decision, confidence
     FROM decisions
     WHERE tool = ?
-      AND (command LIKE ? OR path LIKE ?)
+      AND (command LIKE ? ESCAPE '\\' OR path LIKE ? ESCAPE '\\')
       AND project_cwd = ?
       AND ts >= ?
       AND decision != 'defer'
     ORDER BY ts DESC
     LIMIT 100
-  `).all(tool, `${pattern}%`, `${pattern}%`, project_cwd, cutoff)
+  `).all(tool, `${safePattern}%`, `${safePattern}%`, project_cwd, cutoff)
 }
 
 /**
@@ -96,7 +99,7 @@ export function queryByPattern({ tool, pattern, project_cwd }) {
 export function extractPattern(request) {
   if (request.tool === 'Bash') {
     const cmd = request.input?.command ?? ''
-    return cmd.split(' ').slice(0, 2).join(' ')
+    return cmd.split(/\s+/).filter(Boolean).slice(0, 2).join(' ')
   }
   if (request.input?.file_path) {
     const parts = request.input.file_path.split('/')

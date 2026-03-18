@@ -112,7 +112,7 @@ export async function chain(request, deadline) {
       if (decisionsId != null) {
         try { enqueueDeferred({ decisionsId, sessionId: session_id, tool, input, command, path }) } catch { /* non-fatal */ }
       }
-      appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() })
+      try { appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() }) } catch { /* non-fatal */ }
       return { behavior: 'ask', decision: 'defer', source: 'auto_defer', reason: `Destructive action deferred: ${destructive.reason}` }
     } else {
       // AFK-OFF: log as ask + chain source (hard safety gate, not a user/rule/prediction decision)
@@ -149,7 +149,7 @@ export async function chain(request, deadline) {
       if (decisionsId != null) {
         try { enqueueDeferred({ decisionsId, sessionId: session_id, tool, input, command, path }) } catch { /* non-fatal */ }
       }
-      appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() })
+      try { appendDigest({ tool, command, path, decision: 'defer', ts: Date.now() }) } catch { /* non-fatal */ }
       return { behavior: 'ask', decision: 'defer', source: 'auto_defer', reason: `Anomalous request deferred: ${anomaly.reason}` }
     } else {
       // AFK-OFF: interrupt user with explanation
@@ -179,12 +179,12 @@ export async function chain(request, deadline) {
     const notifyResult = await notify(loadConfig(), { tool, command, path, requestId }, deadline)
     if (notifyResult === 'deny') {
       log('deny', 'notification', { reason: 'User denied via notification' })
-      appendDigest({ tool, command, path, decision: 'deny', ts: Date.now() })
+      try { appendDigest({ tool, command, path, decision: 'deny', ts: Date.now() }) } catch { /* non-fatal */ }
       return { behavior: 'deny', decision: 'deny', source: 'notification', reason: 'Denied via push notification' }
     }
     // "allow", "skip", or "timeout" → fall through to auto-approve
     log('allow', 'auto_afk', { reason: `AFK mode: auto-approved (notify=${notifyResult})` })
-    appendDigest({ tool, command, path, decision: 'allow', ts: Date.now() })
+    try { appendDigest({ tool, command, path, decision: 'allow', ts: Date.now() }) } catch { /* non-fatal */ }
     return { behavior: 'allow', decision: 'allow', source: 'auto_afk', reason: 'AFK mode: auto-approved' }
   }
 
